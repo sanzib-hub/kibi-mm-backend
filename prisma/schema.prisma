@@ -1,0 +1,213 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+model BrandAccount {
+  id        Int      @id @default(autoincrement())
+  company   String
+  industry  String?
+  website   String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users  BrandUser[]
+  briefs CampaignBrief[]
+
+  @@map("brand_account")
+}
+
+model BrandUser {
+  id             Int      @id @default(autoincrement())
+  brandAccountId Int      @map("brand_account_id")
+  email          String   @unique
+  passwordHash   String   @map("password_hash")
+  firstName      String?  @map("first_name")
+  lastName       String?  @map("last_name")
+  role           String   @default("member")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  brandAccount BrandAccount    @relation(fields: [brandAccountId], references: [id])
+  briefs       CampaignBrief[]
+
+  @@map("brand_user")
+}
+
+// ─── Brief ───────────────────────────────────────────────────────────────────
+
+model CampaignBrief {
+  id             Int      @id @default(autoincrement())
+  brandAccountId Int      @map("brand_account_id")
+  brandUserId    Int      @map("brand_user_id")
+
+  campaignName      String  @map("campaign_name")
+  budget            Float?
+  budgetCurrency    String? @default("INR") @map("budget_currency")
+  startDate         DateTime? @map("start_date")
+  endDate           DateTime? @map("end_date")
+  campaignObjective String? @map("campaign_objective")
+
+  sports          String
+  targetCities    String? @map("target_cities")
+  targetStates    String? @map("target_states")
+  targetRegions   String? @map("target_regions")
+  assetCategories String? @map("asset_categories")
+  athleteTiers    String? @map("athlete_tiers")
+
+  deliverables String?
+  notes        String?
+  contactName  String? @map("contact_name")
+  contactEmail String? @map("contact_email")
+  contactPhone String? @map("contact_phone")
+
+  status      String   @default("DRAFT")
+  submittedAt DateTime? @map("submitted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  brandAccount BrandAccount @relation(fields: [brandAccountId], references: [id])
+  brandUser    BrandUser    @relation(fields: [brandUserId], references: [id])
+  lead         Lead?
+  matchRuns    MatchRun[]
+
+  @@map("campaign_brief")
+}
+
+// ─── Lead ────────────────────────────────────────────────────────────────────
+
+model Lead {
+  id             Int       @id @default(autoincrement())
+  briefId        Int       @unique @map("brief_id")
+  status         String    @default("NEW")
+  assignedTo     String?   @map("assigned_to")
+  notes          String?
+  demoRequestedAt DateTime? @map("demo_requested_at")
+  demoScheduledAt DateTime? @map("demo_scheduled_at")
+  closedAt        DateTime? @map("closed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  brief        CampaignBrief @relation(fields: [briefId], references: [id])
+  demoRequests DemoRequest[]
+
+  @@map("lead")
+}
+
+// ─── Demo ────────────────────────────────────────────────────────────────────
+
+model DemoRequest {
+  id            Int      @id @default(autoincrement())
+  leadId        Int      @map("lead_id")
+  briefId       Int      @map("brief_id")
+  contactName   String   @map("contact_name")
+  contactEmail  String   @map("contact_email")
+  contactPhone  String?  @map("contact_phone")
+  preferredTime String?  @map("preferred_time")
+  notes         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  lead Lead @relation(fields: [leadId], references: [id])
+
+  @@map("demo_request")
+}
+
+// ─── Matching ────────────────────────────────────────────────────────────────
+
+model MatchRun {
+  id              Int      @id @default(autoincrement())
+  briefId         Int      @map("brief_id")
+  paramsJson      String   @map("params_json")
+  relaxationsJson String?  @map("relaxations_json")
+  totalCandidates Int      @default(0) @map("total_candidates")
+  ranAt           DateTime @default(now()) @map("ran_at")
+
+  brief   CampaignBrief @relation(fields: [briefId], references: [id])
+  results MatchResult[]
+
+  @@map("match_run")
+}
+
+model MatchResult {
+  id                 Int    @id @default(autoincrement())
+  matchRunId         Int    @map("match_run_id")
+  assetType          String @map("asset_type")
+  assetId            Int    @map("asset_id")
+  score              Float
+  rank               Int
+  scoreBreakdownJson String? @map("score_breakdown_json")
+
+  matchRun MatchRun @relation(fields: [matchRunId], references: [id])
+
+  @@map("match_result")
+}
+
+// ─── Inventory ───────────────────────────────────────────────────────────────
+
+model Athlete {
+  id              Int      @id @default(autoincrement())
+  name            String
+  sport           String
+  city            String
+  state           String
+  tier            String   @default("local")
+  bio             String?
+  imageUrl        String?  @map("image_url")
+  socialFollowers Int?     @map("social_followers")
+  featuredFlag    Boolean  @default(false) @map("featured_flag")
+  status          String   @default("active")
+  sourceSheet     String?  @map("source_sheet")
+  externalId      String?  @map("external_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([name, city, state, sport])
+  @@map("athlete")
+}
+
+model League {
+  id           Int      @id @default(autoincrement())
+  name         String
+  sport        String
+  city         String
+  state        String
+  season       String?
+  level        String?
+  featuredFlag Boolean  @default(false) @map("featured_flag")
+  status       String   @default("active")
+  logoUrl      String?  @map("logo_url")
+  sourceSheet  String?  @map("source_sheet")
+  externalId   String?  @map("external_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([name, city, state, sport])
+  @@map("league")
+}
+
+model Venue {
+  id               Int      @id @default(autoincrement())
+  name             String
+  type             String   @default("venue")
+  city             String
+  state            String
+  sportsSupported  String   @map("sports_supported")
+  capacity         Int?
+  featuredFlag     Boolean  @default(false) @map("featured_flag")
+  status           String   @default("active")
+  imageUrl         String?  @map("image_url")
+  sourceSheet      String?  @map("source_sheet")
+  externalId       String?  @map("external_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([name, city, state])
+  @@map("venue")
+}
