@@ -2,13 +2,16 @@ const app = require('./app');
 const config = require('./config');
 const { startEtlScheduler } = require('./jobs/etl.scheduler');
 
-const PORT = config.port;
+const PORT = process.env.PORT || config.port || 8080;
 
 app.listen(PORT, () => {
-  console.log(`\nKIBI Backend running on http://localhost:${PORT}`);
+  console.log(`KIBI Backend running on port ${PORT}`);
   console.log(`Environment: ${config.nodeEnv}`);
-  console.log(`Health: http://localhost:${PORT}/health\n`);
+  console.log(`Health endpoint enabled at /health`);
 
-  // Start nightly ETL scheduler
-  startEtlScheduler();
+  // Only run scheduler in non-serverless OR explicitly enabled
+  if (process.env.ENABLE_SCHEDULER === "true") {
+    startEtlScheduler();
+    console.log("ETL Scheduler started");
+  }
 });
