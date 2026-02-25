@@ -1,0 +1,65 @@
+name: Build & Deploy KIBI MM
+
+on:
+  push:
+    branches:
+      - '**'
+
+env:
+  PROJECT_ID: prod-481408
+  PROJECT_NUMBER: 960575304884
+  REGION: asia-south1
+  SERVICE: kibi-mm
+  REPOSITORY: kibi-repo
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 🔐 Workload Identity Auth
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/${{ env.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-kibi-mm-backend
+          service_account: github-deployer@prod-481408.iam.gserviceaccount.com
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev
+
+      # 🐳 Build Image
+      - name: Build Docker Image
+        run: |
+          docker build -t asia-south1-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE:${{ github.sha }} .
+
+      # 📦 Push Image
+      - name: Push Docker Image
+        run: |
+          docker push asia-south1-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE:${{ github.sha }}
+
+      # 🚀 Deploy only on main branch
+      - name: Deploy to Cloud Run
+        if: github.ref == 'refs/heads/main'
+        run: |
+          gcloud run deploy $SERVICE \
+            --image asia-south1-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE:${{ github.sha }} \
+            --region $REGION \
+            --platform managed \
+            --allow-unauthenticated \
+            --add-cloudsql-instances prod-481408:asia-south1:kibi-mm \
+            --set-env-vars NODE_ENV=production \
+            --set-env-vars DATABASE_URL="postgresql://kibiuser:${{ secrets.DB_PASSWORD }}@/kibi?host=/cloudsql/prod-481408:asia-south1:kibi-mm" \
+            --set-env-vars JWT_SECRET=${{ secrets.JWT_SECRET }} \
+            --set-env-vars JWT_EXPIRES_IN=7d \
+            --set-env-vars ADMIN_API_KEY=${{ secrets.ADMIN_API_KEY }} \
+            --set-env-vars FRONTEND_URL=https://yourfrontend.com

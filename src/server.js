@@ -2,7 +2,7 @@ const app = require('./app');
 const config = require('./config');
 const { startEtlScheduler } = require('./jobs/etl.scheduler');
 
-const PORT = process.env.PORT || config.port || 8080;
+const PORT = process.env.PORT || config.port || 3001;
 
 app.listen(PORT, () => {
   console.log(`KIBI Backend running on port ${PORT}`);
