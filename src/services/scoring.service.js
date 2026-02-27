@@ -2,11 +2,16 @@ const weights = require('../config/matchWeights');
 const clusters = require('../config/sportClusters');
 
 const OBJECTIVE_AFFINITY = {
-  AWARENESS:   { athlete: 1.0, league: 0.8, venue: 0.6 },
-  ACTIVATION:  { athlete: 0.7, league: 1.0, venue: 1.0 },
-  COMMUNITY:   { athlete: 0.8, league: 1.0, venue: 0.9 },
-  SALES:       { athlete: 0.9, league: 0.6, venue: 0.5 },
-  RECRUITMENT: { athlete: 1.0, league: 0.7, venue: 0.4 },
+  AWARENESS:      { athlete: 1.0, league: 0.8, venue: 0.6 },
+  CONSIDERATION:  { athlete: 0.9, league: 0.9, venue: 0.7 },
+  CONVERSIONS:    { athlete: 0.9, league: 0.6, venue: 0.5 },
+  APP_INSTALLS:   { athlete: 1.0, league: 0.6, venue: 0.5 },
+  FOOTFALL:       { athlete: 0.6, league: 0.8, venue: 1.0 },
+  TRIALS:         { athlete: 1.0, league: 0.5, venue: 0.7 },
+  ACTIVATION:     { athlete: 0.7, league: 1.0, venue: 1.0 },
+  COMMUNITY:      { athlete: 0.8, league: 1.0, venue: 0.9 },
+  SALES:          { athlete: 0.9, league: 0.6, venue: 0.5 },
+  RECRUITMENT:    { athlete: 1.0, league: 0.7, venue: 0.4 },
 };
 
 /**
@@ -92,8 +97,14 @@ function calcObjectiveScore(asset, brief, relaxOpts) {
 
 function getAssetSports(asset) {
   if (asset._type === 'venue') {
-    try { return JSON.parse(asset.sportsSupported || '[]'); }
-    catch { return []; }
+    const raw = asset.sportsSupported || '';
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [String(parsed)];
+    } catch {
+      return String(raw).split(/[,;]/).map(s => s.trim()).filter(Boolean);
+    }
   }
   return [asset.sport].filter(Boolean);
 }

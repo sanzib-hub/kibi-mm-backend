@@ -11,15 +11,32 @@ const app = express();
 
 // ─── Global Middleware ────────────────────────────────────────────────────────
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  credentials: true,
+}));
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(sanitize);
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
-app.get('/health', (req, res) => {
-  res.json({ ok: true, service: 'kibi-backend', timestamp: new Date().toISOString() });
+app.get('/health', async (req, res) => {
+  let db = 'unknown';
+  try {
+    const prisma = require('./lib/prismaClient');
+    await prisma.$connect();
+    db = 'ok';
+  } catch (e) {
+    db = 'error';
+  }
+  const ok = db === 'ok';
+  res.status(ok ? 200 : 503).json({
+    ok,
+    service: 'kibi-backend',
+    db,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // ─── Routes ───────────────────────────────────────────────────────────────────

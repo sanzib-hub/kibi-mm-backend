@@ -29,4 +29,6 @@ module.exports = Object.freeze({
 
   googleSheetsId: process.env.GOOGLE_SHEETS_ID || null,
   googleServiceAccountJson: process.env.GOOGLE_SERVICE_ACCOUNT_JSON || null,
+
+  excelCrmPath: process.env.EXCEL_CRM_PATH || null,
 });

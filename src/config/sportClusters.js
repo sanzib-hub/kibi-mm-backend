@@ -13,6 +13,11 @@ module.exports = {
   swimming:        ['water polo', 'diving', 'triathlon'],
   'flag football': ['football'],
   badminton:       ['tennis', 'squash'],
-  cricket:         ['baseball'],
-  fitness:         ['swimming', 'running', 'gymnastics'],
+  cricket:         ['baseball', 'cricket (t20)'],
+  'cricket (t20)': ['cricket'],
+  football:        ['football (isl)'],
+  'football (isl)': ['football'],
+  fitness:         ['swimming', 'running', 'gymnastics', 'yoga'],
+  kabaddi:         [],
+  yoga:            ['fitness'],
 };

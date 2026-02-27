@@ -120,4 +120,61 @@ function safeParseJson(str) {
   try { return JSON.parse(str); } catch { return str; }
 }
 
-module.exports = { getLeads, getLeadById, updateLead };
+async function updateAssetIncompatibleCategories(type, id, { incompatibleCategories }) {
+  const model = { athlete: prisma.athlete, league: prisma.league, venue: prisma.venue }[type];
+  if (!model) throw new Error('INVALID_ASSET_TYPE');
+
+  const value = incompatibleCategories == null ? null
+    : Array.isArray(incompatibleCategories) ? JSON.stringify(incompatibleCategories.map(c => String(c).toUpperCase()))
+    : typeof incompatibleCategories === 'string' ? JSON.stringify(incompatibleCategories.split(/[,;]/).map(s => s.trim().toUpperCase()).filter(Boolean))
+    : null;
+
+  const asset = await model.update({
+    where: { id: parseInt(id) },
+    data: { incompatibleCategories: value },
+  });
+  return asset;
+}
+
+async function getDashboardStats() {
+  const [totalBriefs, leadsByStatus, totalDeliverables, recentActivity] = await Promise.all([
+    prisma.campaignBrief.count(),
+    prisma.lead.groupBy({ by: ['status'], _count: true }),
+    prisma.deliverable.count(),
+    prisma.lead.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      include: {
+        brief: {
+          include: {
+            brandAccount: { select: { id: true, company: true } },
+          },
+        },
+      },
+    }),
+  ]);
+  return {
+    totalBriefs,
+    leadsByStatus: leadsByStatus.map(g => ({ status: g.status, count: g._count })),
+    totalDeliverables,
+    recentActivity: recentActivity.map(l => ({
+      id: l.id,
+      status: l.status,
+      createdAt: l.createdAt,
+      briefId: l.briefId,
+      campaignName: l.brief?.campaignName,
+      company: l.brief?.brandAccount?.company,
+    })),
+  };
+}
+
+async function getAssetDetail(type, id) {
+  const model = { athlete: prisma.athlete, league: prisma.league, venue: prisma.venue }[type];
+  if (!model) throw new Error('INVALID_ASSET_TYPE');
+
+  const asset = await model.findUnique({ where: { id: parseInt(id) } });
+  if (!asset) throw new Error('ASSET_NOT_FOUND');
+  return asset;
+}
+
+module.exports = { getLeads, getLeadById, updateLead, updateAssetIncompatibleCategories, getDashboardStats, getAssetDetail };

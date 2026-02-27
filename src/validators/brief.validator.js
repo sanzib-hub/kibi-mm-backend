@@ -13,10 +13,17 @@ exports.validateBrief = [
       }
       return true;
     }),
-  body('campaignObjective').optional().isIn(['AWARENESS', 'ACTIVATION', 'COMMUNITY', 'SALES', 'RECRUITMENT'])
+  body('campaignObjective').optional().isIn(['AWARENESS', 'CONSIDERATION', 'CONVERSIONS', 'APP_INSTALLS', 'FOOTFALL', 'TRIALS', 'ACTIVATION', 'COMMUNITY', 'SALES', 'RECRUITMENT'])
     .withMessage('Invalid campaign objective'),
+  body('industryCategory').optional().isIn(['D2C', 'D2C_FITNESS', 'APPAREL', 'FITNESS', 'FINTECH', 'EDUCATION', 'FMCG', 'CONSUMER_ELECTRONICS', 'AUTOMOTIVE', 'F&B', 'BEAUTY', 'SPORTS_BRANDS', 'TELECOM', 'REAL_ESTATE', 'E_COMMERCE', 'OTHER']),
+  body('budgetRange').optional().isIn(['BARTER', 'INR_25K_1L', 'INR_1L_3L', 'INR_3L_10L', 'INR_10L_PLUS']),
+  body('targetAudience').optional().isArray(),
+  body('categoryConstraints').optional().isObject(),
   body('contactEmail').optional({ nullable: true }).isEmail().normalizeEmail().withMessage('Valid contact email required'),
-  body('contactPhone').optional({ nullable: true }).matches(/^\+?[\d\s\-()]{7,20}$/).withMessage('Valid phone number required'),
+  body('contactPhone')
+    .if((value, { req }) => req.body.status !== 'DRAFT')
+    .notEmpty().withMessage('Contact phone is required')
+    .matches(/^\+?[\d\s\-()]{7,20}$/).withMessage('Valid phone number (7–20 digits) required'),
   body('targetCities').optional().isArray(),
   body('targetStates').optional().isArray(),
   body('deliverables').optional().isArray(),

@@ -1,14 +1,22 @@
 const cron = require('node-cron');
+const config = require('../config');
 const { runEtl } = require('./sheetsEtl.service');
+const { runExcelEtl } = require('./excelCrmEtl.service');
 
 function startEtlScheduler() {
-  // Run at 2:00 AM every day
   cron.schedule('0 2 * * *', async () => {
     console.log('[ETL] Scheduled run triggered...');
     try {
       await runEtl();
     } catch (err) {
-      console.error('[ETL] Scheduled run failed:', err.message);
+      console.error('[ETL] Sheets sync failed:', err.message);
+    }
+    if (config.excelCrmPath) {
+      try {
+        await runExcelEtl();
+      } catch (err) {
+        console.error('[ETL] Excel CRM sync failed:', err.message);
+      }
     }
   });
 

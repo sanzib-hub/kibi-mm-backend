@@ -14,7 +14,8 @@
     "test": "jest --runInBand --forceExit",
     "test:unit": "jest tests/unit --forceExit",
     "test:int": "jest tests/integration --runInBand --forceExit",
-    "etl:run": "node -e \"require('./src/jobs/sheetsEtl.service').runEtl().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); })\""
+    "etl:run": "node -e \"require('./src/jobs/sheetsEtl.service').runEtl().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); })\"",
+    "etl:excel": "node -e \"require('./src/jobs/excelCrmEtl.service').runExcelEtl().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); })\""
   },
   "dependencies": {
     "@prisma/client": "^5.14.0",
@@ -31,7 +32,7 @@
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.14",
-    "xss-clean": "^0.1.4"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "jest": "^29.7.0",

@@ -16,7 +16,7 @@ function camelToSnake(str) {
  * Loads brief, runs progressive relaxation, persists MatchRun + MatchResults,
  * and returns teaser payload.
  */
-async function runMatchmaking(briefId, userId) {
+async function runMatchmaking(briefId, userId, options = {}) {
   const brief = await prisma.campaignBrief.findUnique({
     where: { id: briefId },
   });
@@ -25,10 +25,11 @@ async function runMatchmaking(briefId, userId) {
 
   const parsedBrief = {
     ...brief,
-    sports:          safeParseJson(brief.sports, []),
-    targetCities:    safeParseJson(brief.targetCities, []),
-    targetStates:    safeParseJson(brief.targetStates, []),
-    assetCategories: safeParseJson(brief.assetCategories, ['athlete', 'league', 'venue']),
+    sports:             safeParseJson(brief.sports, []),
+    targetCities:       safeParseJson(brief.targetCities, []),
+    targetStates:       safeParseJson(brief.targetStates, []),
+    assetCategories:    safeParseJson(brief.assetCategories, ['athlete', 'league', 'venue']),
+    categoryConstraints: safeParseJson(brief.categoryConstraints, {}),
   };
 
   const { results, relaxationsApplied, isRelaxed } = await runWithRelaxation(
@@ -45,6 +46,7 @@ async function runMatchmaking(briefId, userId) {
         targetStates: parsedBrief.targetStates,
         campaignObjective: parsedBrief.campaignObjective,
         assetCategories: parsedBrief.assetCategories,
+        categoryConstraints: parsedBrief.categoryConstraints,
       }),
       relaxationsJson: JSON.stringify(relaxationsApplied),
       totalCandidates:
@@ -72,7 +74,7 @@ async function runMatchmaking(briefId, userId) {
     });
   }
 
-  return buildTeaserResponse(results, matchRun.id, isRelaxed);
+  return buildTeaserResponse(results, matchRun.id, isRelaxed, options.limits);
 }
 
 async function fetchAndScore(brief, relaxOpts) {
@@ -91,8 +93,18 @@ async function fetchAndScore(brief, relaxOpts) {
   };
 }
 
+function isExcludedByCategoryConstraints(asset, brief) {
+  const exclude = (brief.categoryConstraints?.exclude_categories || []);
+  if (exclude.length === 0) return false;
+  const assetIncompat = safeParseJson(asset.incompatibleCategories, []);
+  if (!Array.isArray(assetIncompat) || assetIncompat.length === 0) return false;
+  const exclSet = new Set(exclude.map(c => String(c).toUpperCase()));
+  return assetIncompat.some(c => exclSet.has(String(c).toUpperCase()));
+}
+
 function scoreAndRank(assets, type, brief, relaxOpts) {
   return assets
+    .filter(asset => !isExcludedByCategoryConstraints(asset, brief))
     .map(asset => {
       asset._type = type;
       const { score, breakdown } = computeScore(asset, brief, relaxOpts);
@@ -146,12 +158,16 @@ async function fetchVenues(brief, relaxOpts) {
   return prisma.venue.findMany({ where });
 }
 
-function buildTeaserResponse(results, matchRunId, isRelaxed) {
-  const N = weights.TEASER_MAX_PER_CATEGORY;
+function buildTeaserResponse(results, matchRunId, isRelaxed, requestLimits) {
+  const limits = {
+    athlete: requestLimits?.athletes ?? weights.TEASER_MAX_ATHLETES ?? weights.TEASER_MAX_PER_CATEGORY ?? 3,
+    league:  requestLimits?.leagues ?? weights.TEASER_MAX_LEAGUES ?? weights.TEASER_MAX_PER_CATEGORY ?? 3,
+    venue:   requestLimits?.venues ?? weights.TEASER_MAX_VENUES ?? weights.TEASER_MAX_PER_CATEGORY ?? 3,
+  };
   const allowed = weights.TEASER_FIELDS_ALLOWED;
 
   const tease = (items, type) =>
-    items.slice(0, N).map(r => {
+    items.slice(0, Math.min(100, limits[type] || 3)).map(r => {
       const obj = { asset_type: type, score: r.score, rank: r.rank };
       for (const [k, v] of Object.entries(r.asset)) {
         if (k.startsWith('_')) continue;

@@ -19,3 +19,13 @@ exports.recommendationsLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// 5 demo requests per user per hour
+exports.demosLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => `demos:${req.user?.id ?? req.ip}`,
+  message: { success: false, error: 'Demo request limit reached. Try again in an hour.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

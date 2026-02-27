@@ -2,17 +2,15 @@ const app = require('./app');
 const config = require('./config');
 const { startEtlScheduler } = require('./jobs/etl.scheduler');
 
-const PORT = process.env.PORT || config.port || 3001;
+const PORT = config.port;
 
 app.listen(PORT, () => {
-  console.log("DATABASE_URL:", process.env.DATABASE_URL);
-  console.log(`KIBI Backend running on port ${PORT}`);
+  console.log(`\nKIBI Backend running on http://localhost:${PORT}`);
   console.log(`Environment: ${config.nodeEnv}`);
-  console.log(`Health endpoint enabled at /health`);
+  console.log(`Health: http://localhost:${PORT}/health`);
+  if (!config.googleSheetsId) console.log('  (Optional) GOOGLE_SHEETS_ID not set — Sheets ETL disabled');
+  if (!config.excelCrmPath) console.log('  (Optional) EXCEL_CRM_PATH not set — Excel ETL manual/scheduled only');
+  console.log('');
 
-  // Only run scheduler in non-serverless OR explicitly enabled
-  if (process.env.ENABLE_SCHEDULER === "true") {
-    startEtlScheduler();
-    console.log("ETL Scheduler started");
-  }
+  startEtlScheduler();
 });

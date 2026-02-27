@@ -1,10 +1,9 @@
 generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "debian-openssl-3.0.x"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -49,21 +48,26 @@ model CampaignBrief {
   brandUserId    Int      @map("brand_user_id")
 
   campaignName      String  @map("campaign_name")
+  industryCategory  String? @map("industry_category")
   budget            Float?
+  budgetRange       String? @map("budget_range")
   budgetCurrency    String? @default("INR") @map("budget_currency")
-  startDate         DateTime? @map("start_date")
-  endDate           DateTime? @map("end_date")
-  campaignObjective String? @map("campaign_objective")
+  startDate           DateTime? @map("start_date")
+  endDate             DateTime? @map("end_date")
+  applicationDeadline DateTime? @map("application_deadline")
+  campaignObjective   String? @map("campaign_objective")
 
-  sports          String
+  sports            String
+  targetAudience    String? @map("target_audience")
   targetCities    String? @map("target_cities")
   targetStates    String? @map("target_states")
   targetRegions   String? @map("target_regions")
   assetCategories String? @map("asset_categories")
   athleteTiers    String? @map("athlete_tiers")
 
-  deliverables String?
-  notes        String?
+  deliverables       String?
+  categoryConstraints String? @map("category_constraints")
+  notes              String?
   contactName  String? @map("contact_name")
   contactEmail String? @map("contact_email")
   contactPhone String? @map("contact_phone")
@@ -73,10 +77,11 @@ model CampaignBrief {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  brandAccount BrandAccount @relation(fields: [brandAccountId], references: [id])
-  brandUser    BrandUser    @relation(fields: [brandUserId], references: [id])
-  lead         Lead?
-  matchRuns    MatchRun[]
+  brandAccount    BrandAccount  @relation(fields: [brandAccountId], references: [id])
+  brandUser       BrandUser     @relation(fields: [brandUserId], references: [id])
+  lead            Lead?
+  matchRuns       MatchRun[]
+  deliverableItems Deliverable[]
 
   @@map("campaign_brief")
 }
@@ -161,14 +166,19 @@ model Athlete {
   bio             String?
   imageUrl        String?  @map("image_url")
   socialFollowers Int?     @map("social_followers")
-  featuredFlag    Boolean  @default(false) @map("featured_flag")
-  status          String   @default("active")
-  sourceSheet     String?  @map("source_sheet")
-  externalId      String?  @map("external_id")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  featuredFlag         Boolean  @default(false) @map("featured_flag")
+  incompatibleCategories String? @map("incompatible_categories")
+  status               String   @default("active")
+  sourceSheet          String?  @map("source_sheet")
+  externalId           String?  @map("external_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   @@unique([name, city, state, sport])
+  @@index([sport])
+  @@index([city])
+  @@index([state])
+  @@index([status])
   @@map("athlete")
 }
 
@@ -180,15 +190,20 @@ model League {
   state        String
   season       String?
   level        String?
-  featuredFlag Boolean  @default(false) @map("featured_flag")
-  status       String   @default("active")
-  logoUrl      String?  @map("logo_url")
-  sourceSheet  String?  @map("source_sheet")
-  externalId   String?  @map("external_id")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  featuredFlag         Boolean  @default(false) @map("featured_flag")
+  incompatibleCategories String? @map("incompatible_categories")
+  status               String   @default("active")
+  logoUrl              String?  @map("logo_url")
+  sourceSheet          String?  @map("source_sheet")
+  externalId           String?  @map("external_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   @@unique([name, city, state, sport])
+  @@index([sport])
+  @@index([city])
+  @@index([state])
+  @@index([status])
   @@map("league")
 }
 
@@ -200,14 +215,38 @@ model Venue {
   state            String
   sportsSupported  String   @map("sports_supported")
   capacity         Int?
-  featuredFlag     Boolean  @default(false) @map("featured_flag")
-  status           String   @default("active")
-  imageUrl         String?  @map("image_url")
-  sourceSheet      String?  @map("source_sheet")
-  externalId       String?  @map("external_id")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  featuredFlag         Boolean  @default(false) @map("featured_flag")
+  incompatibleCategories String? @map("incompatible_categories")
+  status               String   @default("active")
+  imageUrl             String?  @map("image_url")
+  sourceSheet          String?  @map("source_sheet")
+  externalId           String?  @map("external_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   @@unique([name, city, state])
+  @@index([city])
+  @@index([state])
+  @@index([status])
   @@map("venue")
+}
+
+// ─── Deliverables ─────────────────────────────────────────────────────────────
+
+model Deliverable {
+  id            Int           @id @default(autoincrement())
+  briefId       Int           @map("brief_id")
+  brief         CampaignBrief @relation(fields: [briefId], references: [id])
+  type          String        // e.g., "Instagram Reel", "Story Post", "Event Attendance"
+  submissionUrl String        @map("submission_url") // URL to uploaded proof
+  description   String?
+  status        String        @default("SUBMITTED") // SUBMITTED, APPROVED, REJECTED, REVISION_REQUESTED
+  feedback      String?
+  reviewedAt    DateTime?     @map("reviewed_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  @@index([briefId])
+  @@index([status])
+  @@map("deliverable")
 }

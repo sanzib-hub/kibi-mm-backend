@@ -1,4 +1,14 @@
 const briefsService = require('../services/briefs.service');
+const canonicalOptionsService = require('../services/canonicalOptions.service');
+
+async function getCanonicalOptions(req, res, next) {
+  try {
+    const options = await canonicalOptionsService.getCanonicalOptions();
+    res.json({ success: true, data: options });
+  } catch (err) {
+    next(err);
+  }
+}
 
 async function createBrief(req, res, next) {
   try {
@@ -27,4 +37,15 @@ async function getBriefResults(req, res, next) {
   }
 }
 
-module.exports = { createBrief, getBrief, getBriefResults };
+async function exportResultsCsv(req, res, next) {
+  try {
+    const csv = await briefsService.exportResultsCsv(parseInt(req.params.brief_id), req.user.id);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="results-${req.params.brief_id}.csv"`);
+    res.send(csv);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getCanonicalOptions, createBrief, getBrief, getBriefResults, exportResultsCsv };
