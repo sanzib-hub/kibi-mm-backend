@@ -52,7 +52,6 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           gcloud run deploy $SERVICE \
-            --image asia-south1-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE:${{ github.sha }} \
             --region $REGION \
             --platform managed \
             --allow-unauthenticated \
@@ -70,7 +69,7 @@ jobs:
             --set-env-vars SMTP_FROM=${{ secrets.SMTP_FROM }} \
             --set-env-vars NOTIFY_EMAIL=${{ secrets.NOTIFY_EMAIL }} \
             --set-env-vars GOOGLE_SHEETS_ID=${{ secrets.GOOGLE_SHEETS_ID }} \
-            --set-env-vars GOOGLE_SERVICE_ACCOUNT_JSON='${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' \
+            --set-secrets GOOGLE_SERVICE_ACCOUNT_JSON=google-service-account-json:latest \
             --set-env-vars W_SPORT=0.40 \
             --set-env-vars W_GEO=0.30 \
             --set-env-vars W_OBJECTIVE=0.20 \
