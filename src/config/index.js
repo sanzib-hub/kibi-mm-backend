@@ -1,4 +1,4 @@
-require('dotenv').config();
+// dotenv.config() is called in app.js — no need to call it here
 
 const required = ['JWT_SECRET', 'ADMIN_API_KEY'];
 for (const key of required) {
@@ -8,9 +8,9 @@ for (const key of required) {
 }
 
 module.exports = Object.freeze({
-  port: parseInt(process.env.PORT) || 3001,
+  port: parseInt(process.env.PORT, 10) || 3001,
   nodeEnv: process.env.NODE_ENV || 'development',
-  databaseUrl: process.env.DATABASE_URL || 'file:./dev.db',
+  databaseUrl: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/kibi_dev',
 
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
@@ -18,7 +18,7 @@ module.exports = Object.freeze({
   adminApiKey: process.env.ADMIN_API_KEY,
 
   smtpHost: process.env.SMTP_HOST,
-  smtpPort: parseInt(process.env.SMTP_PORT) || 587,
+  smtpPort: parseInt(process.env.SMTP_PORT, 10) || 587,
   smtpUser: process.env.SMTP_USER,
   smtpPass: process.env.SMTP_PASS,
   smtpFrom: process.env.SMTP_FROM || 'KIBI Sports <noreply@kibi.com>',
