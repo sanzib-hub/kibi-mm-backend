@@ -18,7 +18,7 @@
     "etl:excel": "node -e \"require('./src/jobs/excelCrmEtl.service').runExcelEtl().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); })\""
   },
   "dependencies": {
-    "@prisma/client": "^5.14.0",
+    "@prisma/client": "^6.19.2",
     "axios": "^1.7.2",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
@@ -32,12 +32,12 @@
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.14",
+    "prisma": "^6.19.2",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "jest": "^29.7.0",
     "nodemon": "^3.1.4",
-    "prisma": "^5.14.0",
     "supertest": "^7.0.0"
   },
   "engines": {
