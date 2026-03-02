@@ -1,0 +1,132 @@
+Note: The SMS Module is mocked for non-prod environment, baased on the NODE_ENV variable from .env file
+
+Organization API Flows
+    Organization Login:
+        API: /organization/login
+        Method: POST
+        Flow:
+            1. Validate input data matches schema
+            2. If matches, then check if organization with this email exists
+            3. Validate the password of the organization
+            4. Check if the organization is active
+            5. Generate/Fetch JWT token, if generated the organization's id and user type is used in JWT
+            6. Return success response
+
+    Add Affliates:
+        API: /organization/affiliates
+        Method: POST
+        Flow:
+            1. Validate input data matches schema
+            2. If matches, then get the orrganization id from JWT
+            3. If organization id is present, then check if affiliate with this phone number and organization id exists in the affliates table
+            4. If not, then generate Invitation Code
+            5. Then insert record for affiliate along with invitation code, the invitation status is set to PENDING and status is set to INACTIVE
+            6. Insert record for invitation code in invitation_codes table
+            7. Fetch organization name from sports_organizations table for sending SMS
+            8. Send invitation SMS to the affiliate
+            9. Update invitation status to SENT in affiliates table
+            10. Log the action in audit_logs table
+            11. Return success response
+
+    Bulk Add Affiliates:
+        API: /organization/affiliates/bulk
+        Method: POST
+        Flow:
+            1. Validate input data matches bulk schema (array of affiliates, max 50)
+            2. Get organization id from JWT
+            3. Fetch organization name from sports_organizations table for SMS
+            4. For each affiliate in the array:
+                a. Check if affiliate with this phone number and organization id exists in affiliates table
+                b. If exists, add to errors array and continue to next
+                c. If not exists, generate invitation code
+                d. Insert record for affiliate with invitation status PENDING and status INACTIVE
+                e. Insert record for invitation code in invitation_codes table
+                f. Send invitation SMS to the affiliate
+                g. Update invitation status to SENT in affiliates table
+                h. Add to successful results array
+            5. Return response with summary of successful and failed operations
+
+    Get Affiliates:
+        API: /organization/affiliates
+        Method: GET
+        Query Parameters: status, invitationStatus, page, limit, search
+        Flow:
+            1. Get organization id from JWT
+            2. Build query to select all affiliates for the organization where deleted = false
+            3. Apply filters if provided:
+                - Filter by status if status parameter provided
+                - Filter by invitationStatus if invitationStatus parameter provided
+                - Apply search filter on name, phone, or email if search parameter provided
+            4. Apply pagination using page and limit parameters (default: page=1, limit=10)
+            5. Execute query with ordering by createdAt desc
+            6. Get total count of affiliates for pagination metadata
+            7. Return affiliates data with pagination information
+
+    Resend Invitation:
+        API: /organization/affiliates/:id/resend-invitation
+        Method: POST
+        Flow:
+            1. Get affiliate id from URL parameters
+            2. Get organization id from JWT
+            3. Find affiliate by id and organization id where deleted = false
+            4. If affiliate not found, return 404 error
+            5. If invitation already accepted, return 400 error
+            6. Generate new invitation code
+            7. Update affiliate record with new invitation code and set invitation status to PENDING
+            8. Expire old invitation code in invitation_codes table
+            9. Insert new invitation code record in invitation_codes table
+            10. Fetch organization name from sports_organizations table
+            11. Send invitation SMS with new code
+            12. Update invitation status to SENT in affiliates table
+            13. Return success response with new invitation code
+
+    Get Dashboard Stats:
+        API: /organization/dashboard/stats
+        Method: GET
+        Flow:
+            1. Get organization id from JWT
+            2. Execute parallel queries to get statistics:
+                a. Total affiliates count for the organization (where deleted = false)
+                b. Active affiliates count (where status = ACTIVE and deleted = false)
+                c. Pending invitations count (where invitationStatus in PENDING/SENT and deleted = false)
+                d. Recent affiliates count (created in last 30 days and deleted = false)
+            3. Return dashboard statistics with all counts
+
+    Get Organization Details:
+        API: /organization/details
+        Method: GET
+        Flow:
+            1. Get organization id from JWT
+            2. Query sports_organizations table to fetch organization details where id matches and deleted = false
+            3. If organization not found, return 404 error
+            4. Return complete organization details including all fields from sports_organizations table
+            5. Response includes organization metadata like name, email, status, contact info, etc.
+
+    Update Organization Details:
+        API: /organization/details
+        Method: PUT
+        Flow:
+            1. Get organization id from JWT
+            2. Extract updatable fields from request body
+            3. Check if 'name' field is being updated - if yes, return 400 error (name cannot be updated)
+            4. Update sports_organizations table with provided fields where id matches and deleted = false
+            5. If no organization found or update fails, return 404 error
+            6. Return updated organization details
+            7. Note: Organization name is protected and cannot be modified for security/compliance reasons
+
+    Update Affiliate Status:
+        API: /organization/affiliates/:id/status
+        Method: PATCH
+        Flow:
+            1. Get affiliate id from URL parameters
+            2. Get organization id from JWT
+            3. Validate input data matches schema (status must be one of: PENDING, VERIFIED, BANNED, FLAGGED)
+            4. Find affiliate by id and organization id where deleted = false
+            5. If affiliate not found or doesn't belong to organization, return 404 error
+            6. Check if current status is already the same as requested status - if yes, return 400 error
+            7. Update affiliate status in affiliates table with new status and current timestamp
+            8. Log the action in audit_logs table with old and new status values and optional reason
+            9. Return success response with updated affiliate information (id, name, status, updatedAt)
+            10. Note: This allows organizations to manage affiliate compliance and administrative status
+            
+    

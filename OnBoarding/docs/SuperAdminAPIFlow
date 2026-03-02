@@ -1,0 +1,73 @@
+Super Admin API Flows    
+    Super Admin Login:
+        API: /super-admin/login
+        Method: POST
+        Flow:
+            1. Validate input data matches schema
+            2. If matches, then check if super admin with this email exists
+            3. Validate the password of the super admin
+            4. Check if the super admin is active
+            5. Generate/Fetch JWT token, if generated the super admin's id and user type is used in JWT
+            6. Return success response
+
+    New Org registration:
+        API: /organizations
+        Method: POST
+        Flow:
+            1. Validate input data matches schema
+            2. If matches, then check if organization with this email already exists
+            3. If not, then insert new record for the org
+            4. Make another entry in the log table
+            5. Return success response
+
+    Get All Oregistration:
+        API: /organizations
+        Method: GET
+        Flow:
+            1. Fetch all the Organizations which are not deleted, since we do soft deletes, orgs can be filtered by status as well
+            2. Calculate offset based on page and limit set, so when fetched the data starts at the offset till the limit
+            3. Orgs are sorted in desc order using createdAT
+            4. Return success response along with the details of the orgs and some metadata
+
+    Update the status of an Organization:
+        API: /organizations/:id/status
+        Method: PATCH
+        Flow:
+            1. Fetch the query params
+            2. Validate the request body
+            3. Fetch the details of the org by id
+            4. Update the status of the org in DB
+            5. Make Audit log entry
+            6. Return success reponse
+        
+    Fetch Non-Affliate Requests:
+        API: /non-affiliate-requests
+        Method: GET
+        FLOW:
+            1. Fetch all non-affliate requests from the non_affiliate_requests table based on status which if not provided is in query params is set to pending
+            2. The requests are sorted by created at in desc order
+            3. Return the data with some metadata
+
+    Review Non-Affliate Request:
+        API: /non-affiliate-requests/:id/review
+        Method: PATCH
+        Flow:
+            1. Fetch the query params
+            2. Validate the request body
+            3. Fetch the details of the non-affiliate request by id
+            4. Update the status of the non-affiliate request in DB, only Apporved and Rejected status are allowed
+            5. Make Audit log entry
+            6. Return success reponse
+
+-------------------------------------------------------------
+
+Super Admin Panel -> OnBoard Sports Org
+
+Sports Org -> Login to their Panel -> Add their affliates -> These Affliates get Invitation Code -> Request OTP with mobile and invitation code
+
+People who are not affliates can request invitaion code directly -> Once Approved by KiBi -> They follow above process
+
+
+If sport org is going to use the events module to create the events then where are we going to do that, if on the Web SaaS then we need login and signup for the org as well?
+If we are assuming that the org signs-up and they can create events then where do the atheletes see these events?
+

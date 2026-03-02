@@ -1,0 +1,205 @@
+services:
+  # Database service - runs first
+  postgres:
+    image: postgres:15-alpine
+    container_name: kibi-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis service - runs first
+  redis:
+    image: redis:7-alpine
+    container_name: kibi-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: kibi-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+    depends_on:
+      - onboarding-service
+      - events-service
+      - brandcampaign-service
+      - payments-service
+    restart: unless-stopped
+
+  # OnBoarding service
+  onboarding-service:
+    build:
+      context: ./OnBoarding
+      dockerfile: Dockerfile
+    container_name: kibi-onboarding
+    ports:
+      - "4000:4000"
+    environment:
+      - NODE_ENV=development
+      - PORT=4000
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB}
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN}
+      - FAST2SMS_API_KEY=${FAST2SMS_API_KEY}
+      - FAST2SMS_URL=https://www.fast2sms.com/dev/bulkV2
+      - SENDER_ID=KIBISP
+      - OTP_MESSAGE_ID=179341
+      - INVITE_MESSAGE_ID=179387
+      - UNAFFILIATE_MESSAGE_ID=199515
+      - AWS_REGION=${AWS_REGION}
+      - S3_BUCKET=${S3_BUCKET}
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET}
+      - RAZORPAY_WEBHOOK_KEY=${RAZORPAY_WEBHOOK_KEY}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./OnBoarding:/app
+      - /app/node_modules
+    command: npm run dev
+    restart: unless-stopped
+
+  # Events service
+  events-service:
+    build:
+      context: ./Events
+      dockerfile: Dockerfile
+    container_name: kibi-events
+    ports:
+      - "4001:4001"
+    environment:
+      - NODE_ENV=development
+      - PORT=4001
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB}
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./Events:/app
+      - /app/node_modules
+    command: npm run dev
+    restart: unless-stopped
+
+  # BrandCampaign service
+  brandcampaign-service:
+    build:
+      context: ./BrandCampaign
+      dockerfile: Dockerfile
+    container_name: kibi-brandcampaign
+    ports:
+      - "4002:4002"
+    environment:
+      - NODE_ENV=development
+      - PORT=4002
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB}
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN}
+      - AWS_REGION=${AWS_REGION}
+      - S3_BUCKET=${S3_BUCKET}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./BrandCampaign:/app
+      - /app/node_modules
+    command: npm run dev
+    restart: unless-stopped
+
+  # Payments service
+  payments-service:
+    build:
+      context: ./Payments
+      dockerfile: Dockerfile
+    container_name: kibi-payments
+    ports:
+      - "4003:4003"
+    environment:
+      - NODE_ENV=development
+      - PORT=4003
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB}
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN}
+      - RAZORPAY_ID_KEY=${RAZORPAY_ID_KEY}
+      - RAZORPAY_SECRET_KEY=${RAZORPAY_SECRET_KEY}
+      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET}
+      - KIBI_ACCOUNT_ID=${KIBI_ACCOUNT_ID}
+      - RAZORPAYX_ID_KEY=${RAZORPAYX_ID_KEY}
+      - RAZORPAYX_SECRET_KEY=${RAZORPAYX_SECRET_KEY}
+      - RAZORPAY_BASE_URL=https://api.razorpay.com/v1
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./Payments:/app
+      - /app/node_modules
+    command: npm run dev
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: kibi-network

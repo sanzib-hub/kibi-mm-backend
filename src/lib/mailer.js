@@ -10,9 +10,11 @@ function getTransporter() {
     // Return a preview/console transport when SMTP is not configured
     transporter = {
       sendMail: async (opts) => {
-        console.log('[Mailer] Email (no SMTP configured):');
-        console.log('  To:', opts.to);
-        console.log('  Subject:', opts.subject);
+        if (process.env.NODE_ENV !== 'test') {
+          console.log('[Mailer] Email (no SMTP configured):');
+          console.log('  To:', opts.to);
+          console.log('  Subject:', opts.subject);
+        }
         return { messageId: 'dev-preview' };
       },
     };

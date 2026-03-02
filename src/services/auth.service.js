@@ -24,7 +24,8 @@ async function register({ company, email, password, firstName, lastName }) {
   });
 
   const token = generateToken(user, account.id);
-  return { token, user: safeUser(user), account: { id: account.id, company: account.company } };
+  const refreshToken = generateRefreshToken(user, account.id);
+  return { token, refreshToken, user: safeUser(user), account: { id: account.id, company: account.company } };
 }
 
 async function login({ email, password }) {
@@ -38,7 +39,8 @@ async function login({ email, password }) {
   if (!valid) throw new Error('INVALID_CREDENTIALS');
 
   const token = generateToken(user, user.brandAccountId);
-  return { token, user: safeUser(user), account: { id: user.brandAccount.id, company: user.brandAccount.company } };
+  const refreshToken = generateRefreshToken(user, user.brandAccountId);
+  return { token, refreshToken, user: safeUser(user), account: { id: user.brandAccount.id, company: user.brandAccount.company } };
 }
 
 function generateToken(user, brandAccountId) {
@@ -47,6 +49,35 @@ function generateToken(user, brandAccountId) {
     config.jwtSecret,
     { expiresIn: config.jwtExpiresIn }
   );
+}
+
+function generateRefreshToken(user, brandAccountId) {
+  return jwt.sign(
+    { id: user.id, brandAccountId, type: 'refresh' },
+    config.jwtSecret,
+    { expiresIn: config.jwtRefreshExpiresIn }
+  );
+}
+
+async function refresh(refreshTokenValue) {
+  if (!refreshTokenValue) throw new Error('INVALID_REFRESH_TOKEN');
+  let payload;
+  try {
+    payload = jwt.verify(refreshTokenValue, config.jwtSecret);
+  } catch {
+    throw new Error('INVALID_REFRESH_TOKEN');
+  }
+  if (payload.type !== 'refresh') throw new Error('INVALID_REFRESH_TOKEN');
+
+  const user = await prisma.brandUser.findUnique({
+    where: { id: payload.id },
+    include: { brandAccount: true },
+  });
+  if (!user || user.brandAccountId !== payload.brandAccountId) throw new Error('INVALID_REFRESH_TOKEN');
+
+  const token = generateToken(user, user.brandAccountId);
+  const refreshToken = generateRefreshToken(user, user.brandAccountId);
+  return { token, refreshToken, user: safeUser(user), account: { id: user.brandAccount.id, company: user.brandAccount.company } };
 }
 
 function safeUser(user) {
@@ -60,4 +91,4 @@ function safeUser(user) {
   };
 }
 
-module.exports = { register, login };
+module.exports = { register, login, refresh };

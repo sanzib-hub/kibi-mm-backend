@@ -4,9 +4,9 @@ const config = require('../config');
 const { normalizeSport, normalizeCityState } = require('./normalization');
 
 const SHEET_TABS = {
-  athletes: 'INVENTORY_ATHLETES',
-  leagues:  'INVENTORY_LEAGUES',
-  venues:   'INVENTORY_VENUES',
+  athletes: 'Athletes',
+  leagues:  'Leagues',
+  venues:   'Venues',
 };
 
 async function runEtl() {

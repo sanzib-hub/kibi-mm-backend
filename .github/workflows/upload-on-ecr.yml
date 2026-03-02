@@ -1,0 +1,520 @@
+name: Build and Push to GCP Artifact Registry
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      build_onboarding:
+        description: 'Build OnBoarding Service'
+        required: false
+        type: boolean
+        default: false
+      build_events:
+        description: 'Build Events Service'
+        required: false
+        type: boolean
+        default: false
+      build_brandcampaign:
+        description: 'Build BrandCampaign Service'
+        required: false
+        type: boolean
+        default: false
+      build_payments:
+        description: 'Build Payments Service'
+        required: false
+        type: boolean
+        default: false
+      build_all:
+        description: 'Build All Services'
+        required: false
+        type: boolean
+        default: false
+      custom_tag:
+        description: 'Custom tag suffix (optional, e.g., "hotfix", "staging")'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  REGION: asia-south1
+  REGISTRY: asia-south1-docker.pkg.dev
+  ARTIFACT_REPO: backend-services
+
+jobs:
+  detect-changes:
+    name: Detect Service Changes
+    runs-on: ubuntu-latest
+    outputs:
+      onboarding-changed: ${{ steps.changes.outputs.onboarding }}
+      events-changed: ${{ steps.changes.outputs.events }}
+      brandcampaign-changed: ${{ steps.changes.outputs.brandcampaign }}
+      payments-changed: ${{ steps.changes.outputs.payments }}
+      common-changed: ${{ steps.changes.outputs.common }}
+      image-tag: ${{ steps.generate-tag.outputs.tag }}
+
+    steps:
+      - name: Generate timestamp tag
+        id: generate-tag
+        run: |
+          TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S")
+          CUSTOM_SUFFIX="${{ github.event.inputs.custom_tag }}"
+
+          if [ -n "$CUSTOM_SUFFIX" ]; then
+            IMAGE_TAG="v-${TIMESTAMP}-${CUSTOM_SUFFIX}"
+          else
+            IMAGE_TAG="v-${TIMESTAMP}"
+          fi
+
+          echo "tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "📅 Generated image tag for this workflow: ${IMAGE_TAG}"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes or manual selection
+        id: changes
+        run: |
+          # Check if this is a manual workflow dispatch
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "🎯 Manual workflow dispatch detected"
+
+            # Check if build_all is selected
+            if [ "${{ github.event.inputs.build_all }}" == "true" ]; then
+              echo "🔨 Building ALL services (manual selection)"
+              echo "onboarding=true" >> $GITHUB_OUTPUT
+              echo "events=true" >> $GITHUB_OUTPUT
+              echo "brandcampaign=true" >> $GITHUB_OUTPUT
+              echo "payments=true" >> $GITHUB_OUTPUT
+              echo "common=true" >> $GITHUB_OUTPUT
+            else
+              # Use individual service selections
+              if [ "${{ github.event.inputs.build_onboarding }}" == "true" ]; then
+                echo "onboarding=true" >> $GITHUB_OUTPUT
+                echo "✅ OnBoarding selected for build"
+              else
+                echo "onboarding=false" >> $GITHUB_OUTPUT
+              fi
+
+              if [ "${{ github.event.inputs.build_events }}" == "true" ]; then
+                echo "events=true" >> $GITHUB_OUTPUT
+                echo "✅ Events selected for build"
+              else
+                echo "events=false" >> $GITHUB_OUTPUT
+              fi
+
+              if [ "${{ github.event.inputs.build_brandcampaign }}" == "true" ]; then
+                echo "brandcampaign=true" >> $GITHUB_OUTPUT
+                echo "✅ BrandCampaign selected for build"
+              else
+                echo "brandcampaign=false" >> $GITHUB_OUTPUT
+              fi
+
+              if [ "${{ github.event.inputs.build_payments }}" == "true" ]; then
+                echo "payments=true" >> $GITHUB_OUTPUT
+                echo "✅ Payments selected for build"
+              else
+                echo "payments=false" >> $GITHUB_OUTPUT
+              fi
+
+              echo "common=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            # Automatic change detection for push/PR events
+            echo "🔍 Automatic change detection"
+
+            # Determine the correct base for comparison
+            if [ "${{ github.event_name }}" == "pull_request" ]; then
+              BASE_REF="${{ github.event.pull_request.base.sha }}"
+              HEAD_REF="${{ github.event.pull_request.head.sha }}"
+              echo "📌 Comparing PR: $HEAD_REF (head) vs $BASE_REF (base)"
+            else
+              BASE_REF="HEAD~1"
+              HEAD_REF="HEAD"
+              echo "📌 Comparing push: $HEAD_REF vs $BASE_REF"
+            fi
+
+            # Get list of changed files
+            CHANGED_FILES=$(git diff --name-only $BASE_REF $HEAD_REF)
+            echo "📝 Changed files:"
+            echo "$CHANGED_FILES"
+
+            # Check OnBoarding changes
+            if echo "$CHANGED_FILES" | grep -q -E '^OnBoarding/'; then
+              echo "onboarding=true" >> $GITHUB_OUTPUT
+              echo "✅ OnBoarding has changes"
+            else
+              echo "onboarding=false" >> $GITHUB_OUTPUT
+              echo "⏭️  OnBoarding has no changes"
+            fi
+
+            # Check Events changes
+            if echo "$CHANGED_FILES" | grep -q -E '^Events/'; then
+              echo "events=true" >> $GITHUB_OUTPUT
+              echo "✅ Events has changes"
+            else
+              echo "events=false" >> $GITHUB_OUTPUT
+              echo "⏭️  Events has no changes"
+            fi
+
+            # Check BrandCampaign changes
+            if echo "$CHANGED_FILES" | grep -q -E '^BrandCampaign/'; then
+              echo "brandcampaign=true" >> $GITHUB_OUTPUT
+              echo "✅ BrandCampaign has changes"
+            else
+              echo "brandcampaign=false" >> $GITHUB_OUTPUT
+              echo "⏭️  BrandCampaign has no changes"
+            fi
+
+            # Check Payments changes (including common files)
+            if echo "$CHANGED_FILES" | grep -q -E '^Payments/' || echo "$CHANGED_FILES" | grep -q -E '^(init\.sql|docker-compose\.yml)$'; then
+              echo "payments=true" >> $GITHUB_OUTPUT
+              echo "✅ Payments has changes"
+            else
+              echo "payments=false" >> $GITHUB_OUTPUT
+              echo "⏭️  Payments has no changes"
+            fi
+
+            # Check common files (init.sql, docker-compose files)
+            if echo "$CHANGED_FILES" | grep -q -E '^(init\.sql|docker-compose.*\.yml)$'; then
+              echo "common=true" >> $GITHUB_OUTPUT
+              echo "⚠️  Common files changed (init.sql or docker-compose)"
+            else
+              echo "common=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+  build-and-push:
+    name: Build and Push ${{ matrix.service.name }}
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # 🔧 FIXED: Only use 'environment: production' when pushing to registry
+    environment: ${{ github.event_name == 'pull_request' && '' || 'production' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        service:
+          - name: onboarding
+            directory: OnBoarding
+            port: 4000
+            changed: ${{ needs.detect-changes.outputs.onboarding-changed }}
+          - name: events
+            directory: Events
+            port: 4001
+            changed: ${{ needs.detect-changes.outputs.events-changed }}
+          - name: brandcampaign
+            directory: BrandCampaign
+            port: 4002
+            changed: ${{ needs.detect-changes.outputs.brandcampaign-changed }}
+          - name: payments
+            directory: Payments
+            port: 4003
+            changed: ${{ needs.detect-changes.outputs.payments-changed }}
+
+    steps:
+      - name: Checkout code
+        if: matrix.service.changed == 'true'
+        uses: actions/checkout@v4
+
+      - name: Skip if no changes
+        if: matrix.service.changed != 'true'
+        run: |
+          echo "⏭️  Skipping ${{ matrix.service.name }} - no changes detected"
+          exit 0
+
+      # 🔐 GCP OIDC Authentication - only for master/workflow_dispatch
+      - name: Authenticate to Google Cloud
+        if: matrix.service.changed == 'true' && (github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch')
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          audience: "sts.googleapis.com"
+
+      - name: Setup Cloud SDK
+        if: matrix.service.changed == 'true' && (github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch')
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        if: matrix.service.changed == 'true' && (github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch')
+        run: |
+          gcloud auth configure-docker ${{ env.REGISTRY }} --quiet
+
+      - name: Create Artifact Registry repository if needed
+        if: matrix.service.changed == 'true' && (github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
+        run: |
+          gcloud artifacts repositories describe ${{ env.ARTIFACT_REPO }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --location=${{ env.REGION }} || \
+          gcloud artifacts repositories create ${{ env.ARTIFACT_REPO }} \
+            --repository-format=docker \
+            --location=${{ env.REGION }} \
+            --project=${{ secrets.GCP_PROJECT_ID }} \
+            --description="KIBI Backend Services"
+
+      - name: Pull latest image for cache
+        if: matrix.service.changed == 'true' && (github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
+        env:
+          IMAGE_PATH: ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/kibi-${{ matrix.service.name }}-service
+        run: |
+          docker pull $IMAGE_PATH:latest || echo "⚠️  No cache image found, will build from scratch"
+
+      - name: Build Docker image
+        if: matrix.service.changed == 'true'
+        env:
+          IMAGE_PATH: ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/kibi-${{ matrix.service.name }}-service
+          IMAGE_TAG: ${{ needs.detect-changes.outputs.image-tag }}
+          DOCKER_BUILDKIT: 1
+        run: |
+          set -e
+
+          echo "🔨 Building Docker image for ${{ matrix.service.name }} service..."
+          echo "📊 Available memory:"
+          free -h
+
+          # Build the image with caching
+          docker build \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --cache-from $IMAGE_PATH:latest \
+            --memory=4g \
+            --memory-swap=4g \
+            -t $IMAGE_PATH:$IMAGE_TAG \
+            -f ${{ matrix.service.directory }}/Dockerfile.prod \
+            ${{ matrix.service.directory }}
+
+          echo "✅ Docker image built successfully"
+
+      - name: Push image to Artifact Registry (master branch only)
+        if: matrix.service.changed == 'true' && (github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch')
+        env:
+          IMAGE_PATH: ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/kibi-${{ matrix.service.name }}-service
+          IMAGE_TAG: ${{ needs.detect-changes.outputs.image-tag }}
+        run: |
+          set -e
+
+          echo "📤 Pushing image to Artifact Registry..."
+          echo "Branch: ${{ github.ref }}"
+          echo "Event: ${{ github.event_name }}"
+
+          # Always push with timestamp tag
+          echo "🏷️  Pushing with tag: $IMAGE_TAG"
+          docker push $IMAGE_PATH:$IMAGE_TAG
+
+          # Only tag as 'latest' if on master branch
+          if [ "${{ github.ref }}" == "refs/heads/master" ]; then
+            echo "🏷️  Tagging as latest (master branch)..."
+            docker tag $IMAGE_PATH:$IMAGE_TAG $IMAGE_PATH:latest
+            docker push $IMAGE_PATH:latest
+            echo "✅ Pushed with tags: $IMAGE_TAG, latest"
+          else
+            echo "⚠️  Not master branch - skipping 'latest' tag"
+            echo "✅ Pushed with tag: $IMAGE_TAG only"
+          fi
+
+          echo "🧹 Cleaning up Docker cache..."
+          docker system prune -f
+
+      - name: Build verification complete (PR only)
+        if: matrix.service.changed == 'true' && github.event_name == 'pull_request'
+        run: |
+          echo "✅ Build verification successful for PR"
+          echo "📝 Image was built but NOT pushed to Artifact Registry"
+          echo "🔒 Only commits to master branch are pushed to Artifact Registry"
+
+      - name: Update deployment status
+        if: matrix.service.changed == 'true'
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "✅ Successfully built ${{ matrix.service.name }} service (verification only)"
+            echo "📝 Image built but NOT pushed to Artifact Registry (PR builds are for verification)"
+          else
+            echo "✅ Successfully built and pushed ${{ matrix.service.name }} service"
+            echo "📦 Image: ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/kibi-${{ matrix.service.name }}-service:${{ needs.detect-changes.outputs.image-tag }}"
+            if [ "${{ github.ref }}" == "refs/heads/master" ]; then
+              echo "🏷️  Tags: ${{ needs.detect-changes.outputs.image-tag }}, latest"
+            else
+              echo "🏷️  Tag: ${{ needs.detect-changes.outputs.image-tag }} (no 'latest' tag - not master branch)"
+            fi
+          fi
+
+  deployment-summary:
+    name: Deployment Summary
+    needs: [detect-changes, build-and-push]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Generate Deployment Summary
+        run: |
+          echo "# 🚀 KIBI Platform Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow:** \`${{ github.workflow }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Author:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Tag:** \`${{ needs.detect-changes.outputs.image-tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**GCP Region:** \`${{ env.REGION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Artifact Registry:** \`${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}\`" >> $GITHUB_STEP_SUMMARY
+
+          # Show build mode
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ⚠️  Pull Request Build Mode" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- **Build Mode:** Verification Only" >> $GITHUB_STEP_SUMMARY
+            echo "- **Artifact Registry Upload:** ❌ Disabled (PR builds are not pushed)" >> $GITHUB_STEP_SUMMARY
+            echo "- **Purpose:** Verify that Docker images build successfully" >> $GITHUB_STEP_SUMMARY
+            echo "- **Note:** Images will be pushed to Artifact Registry after PR is merged to master" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Show manual trigger details if applicable
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 🎯 Manual Trigger Details" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            if [ "${{ github.event.inputs.build_all }}" == "true" ]; then
+              echo "- **Build Mode:** All Services" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- **Build Mode:** Selected Services" >> $GITHUB_STEP_SUMMARY
+              echo "  - OnBoarding: ${{ github.event.inputs.build_onboarding }}" >> $GITHUB_STEP_SUMMARY
+              echo "  - Events: ${{ github.event.inputs.build_events }}" >> $GITHUB_STEP_SUMMARY
+              echo "  - BrandCampaign: ${{ github.event.inputs.build_brandcampaign }}" >> $GITHUB_STEP_SUMMARY
+              echo "  - Payments: ${{ github.event.inputs.build_payments }}" >> $GITHUB_STEP_SUMMARY
+            fi
+            if [ "${{ github.event.inputs.custom_tag }}" != "" ]; then
+              echo "- **Custom Tag Suffix:** \`${{ github.event.inputs.custom_tag }}\`" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📦 Service Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Status | Changes Detected | Image Tag | Artifact Registry |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|------------------|-----------|-------------------|" >> $GITHUB_STEP_SUMMARY
+
+          # OnBoarding Service
+          if [ "${{ needs.detect-changes.outputs.onboarding-changed }}" == "true" ]; then
+            if [ "${{ needs.build-and-push.result }}" == "success" ]; then
+              if [ "${{ github.event_name }}" == "pull_request" ]; then
+                echo "| 🏢 **OnBoarding** | ✅ **Built (Verified)** | Yes | \`${{ needs.detect-changes.outputs.image-tag }}\` | Not pushed (PR) |" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "| 🏢 **OnBoarding** | ✅ **Pushed to Registry** | Yes | \`${{ needs.detect-changes.outputs.image-tag }}\` | [kibi-onboarding-service](${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/kibi-onboarding-service) |" >> $GITHUB_STEP_SUMMARY
+              fi
+            else
+              echo "| 🏢 **OnBoarding** | ❌ **Failed** | Yes | N/A | N/A |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "| 🏢 **OnBoarding** | ⏭️  Skipped | No | N/A | N/A |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Events Service
+          if [ "${{ needs.detect-changes.outputs.events-changed }}" == "true" ]; then
+            if [ "${{ needs.build-and-push.result }}" == "success" ]; then
+              if [ "${{ github.event_name }}" == "pull_request" ]; then
+                echo "| 🎯 **Events** | ✅ **Built (Verified)** | Yes | \`${{ needs.detect-changes.outputs.image-tag }}\` | Not pushed (PR) |" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "| 🎯 **Events** | ✅ **Pushed to Registry** | Yes | \`${{ needs.detect-changes.outputs.image-tag }}\` | [kibi-events-service](${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/kibi-events-service) |" >> $GITHUB_STEP_SUMMARY
+              fi
+            else
+              echo "| 🎯 **Events** | ❌ **Failed** | Yes | N/A | N/A |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "| 🎯 **Events** | ⏭️  Skipped | No | N/A | N/A |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # BrandCampaign Service
+          if [ "${{ needs.detect-changes.outputs.brandcampaign-changed }}" == "true" ]; then
+            if [ "${{ needs.build-and-push.result }}" == "success" ]; then
+              if [ "${{ github.event_name }}" == "pull_request" ]; then
+                echo "| 🎨 **BrandCampaign** | ✅ **Built (Verified)** | Yes | \`${{ needs.detect-changes.outputs.image-tag }}\` | Not pushed (PR) |" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "| 🎨 **BrandCampaign** | ✅ **Pushed to Registry** | Yes | \`${{ needs.detect-changes.outputs.image-tag }}\` | [kibi-brandcampaign-service](${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/kibi-brandcampaign-service) |" >> $GITHUB_STEP_SUMMARY
+              fi
+            else
+              echo "| 🎨 **BrandCampaign** | ❌ **Failed** | Yes | N/A | N/A |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "| 🎨 **BrandCampaign** | ⏭️  Skipped | No | N/A | N/A |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Payments Service
+          if [ "${{ needs.detect-changes.outputs.payments-changed }}" == "true" ]; then
+            if [ "${{ needs.build-and-push.result }}" == "success" ]; then
+              if [ "${{ github.event_name }}" == "pull_request" ]; then
+                echo "| 💰 **Payments** | ✅ **Built (Verified)** | Yes | \`${{ needs.detect-changes.outputs.image-tag }}\` | Not pushed (PR) |" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "| 💰 **Payments** | ✅ **Pushed to Registry** | Yes | \`${{ needs.detect-changes.outputs.image-tag }}\` | [kibi-payments-service](${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/kibi-payments-service) |" >> $GITHUB_STEP_SUMMARY
+              fi
+            else
+              echo "| 💰 **Payments** | ❌ **Failed** | Yes | N/A | N/A |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "| 💰 **Payments** | ⏭️  Skipped | No | N/A | N/A |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Overall Status
+          if [ "${{ needs.build-and-push.result }}" == "success" ]; then
+            echo "## ✅ Overall Status: **SUCCESS**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            if [ "${{ github.event_name }}" == "pull_request" ]; then
+              echo "All changed services were built successfully! ✅" >> $GITHUB_STEP_SUMMARY
+              echo "Images were **NOT** pushed to Artifact Registry (this is a PR build for verification only)." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "All changed services were built and pushed to Artifact Registry successfully!" >> $GITHUB_STEP_SUMMARY
+            fi
+          elif [ "${{ needs.build-and-push.result }}" == "failure" ]; then
+            echo "## ❌ Overall Status: **FAILED**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "One or more services failed to build. Please check the logs above." >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.build-and-push.result }}" == "skipped" ]; then
+            echo "## ⏭️  Overall Status: **SKIPPED**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "No changes detected in any service directories." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ⚠️  Overall Status: **${{ needs.build-and-push.result }}**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📝 Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.build-and-push.result }}" == "success" ]; then
+            if [ "${{ github.event_name }}" == "pull_request" ]; then
+              echo "- ✅ Build verification passed - PR is safe to merge" >> $GITHUB_STEP_SUMMARY
+              echo "- 📝 Images will be pushed to Artifact Registry automatically after merging to master" >> $GITHUB_STEP_SUMMARY
+              echo "- 🔒 The \`latest\` tag will only be updated after merge" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- Images are available in Artifact Registry with tag: \`${{ needs.detect-changes.outputs.image-tag }}\`" >> $GITHUB_STEP_SUMMARY
+              if [ "${{ github.ref }}" == "refs/heads/master" ]; then
+                echo "- The \`latest\` tag has been updated to point to this build" >> $GITHUB_STEP_SUMMARY
+              fi
+              echo "- Deploy to Cloud Run using: \`gcloud run deploy SERVICE_NAME --image=${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/IMAGE_NAME:${{ needs.detect-changes.outputs.image-tag }}\`" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "- Review the build logs above to identify the issue" >> $GITHUB_STEP_SUMMARY
+            echo "- Fix the issues and push again to re-trigger the workflow" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Fail workflow if deployments failed
+        if: needs.build-and-push.result == 'failure'
+        run: |
+          echo "❌ One or more deployments failed"
+          exit 1

@@ -1,0 +1,251 @@
+Note: The SMS Module is mocked for non-prod environment, based on the NODE_ENV variable from .env file
+
+Events API Flows
+    Create Event:
+        API: /api/events
+        Method: POST
+        Flow:
+            1. Validate input data matches schema (name, description, startDate, endDate, startTime, organizerEmail, etc.)
+            2. Check for duplicate event names within the same organization
+            3. Verify organization exists and is active in sports_organizations table
+            4. Verify form exists and belongs to the organization in forms table
+            5. Prepare event data with security defaults (isApprovedByAdmin: false, deleted: false)
+            6. Insert event record in events table with created_at timestamp
+            7. Create event-form mapping in events_forms table for registration-form association
+            8. Return success response with created event ID
+            9. Note: Events require admin approval before affiliates can register
+
+    Update Event:
+        API: /api/events/:eventId
+        Method: PUT
+        Flow:
+            1. Validate event ID is provided and numeric
+            2. Validate update data matches schema (all fields optional)
+            3. Check if request body contains data to update
+            4. Build update object with only provided fields from updatable fields list
+            5. Handle admin approval separately for security (isApprovedByAdmin field)
+            6. Update event record in events table where id matches and deleted = false
+            7. If newFormId provided, handle form remapping:
+                a. Soft delete old form mapping in events_forms table
+                b. Create new form mapping with new formId
+            8. Return updated event data
+            9. Note: Selective field updates minimize database operations
+
+    Delete Event:
+        API: /api/events/:eventId
+        Method: DELETE
+        Flow:
+            1. Validate event ID is provided and numeric
+            2. Verify event exists and is not already deleted in events table
+            3. Soft delete the event by setting deleted = true
+            4. Cascade soft delete: Update events_forms table to set deleted = true for event mappings
+            5. Return success response
+            6. Note: Implements soft delete for data integrity and audit trail
+
+    Get All Events:
+        API: /api/events
+        Method: GET
+        Flow:
+            1. Build query with left join between events and events_forms tables
+            2. Select event fields and associated formId
+            3. Apply filters based on query parameters:
+                - name (partial match with ilike)
+                - organizationId (exact match)
+                - participationFee (exact match)
+                - organizerPhoneNumber (partial match)
+                - venue (partial match)
+                - organizationName (partial match)
+                - address (partial match)
+                - isApprovedByAdmin (boolean filter)
+                - deleted (boolean filter, defaults to false)
+                - eventType (exact match)
+            4. Execute query and return events with count
+            5. Return 404 if no events found
+            6. Note: Performance optimized with selective joins and indexing
+
+    Approve Event:
+        API: /api/events/:eventId/approve
+        Method: PUT
+        Flow:
+            1. Validate event ID is provided and numeric
+            2. Validate request body contains isApprovedByAdmin field
+            3. Update event record setting isApprovedByAdmin to requested value
+            4. Return updated event data
+            5. Note: Only Super Admins can access this endpoint (adminAuth middleware)
+            6. Events must be approved before affiliates can register
+
+    Register Affiliate for Event:
+        API: /api/events/register
+        Method: POST
+        Flow:
+            1. Validate registration data matches schema (affiliate_id, event_id, form_id, response_data, payment details)
+            2. Parse and validate payment timestamp from "dd-MM-yyyy, HH:mm:ss" format
+            3. Verify affiliate exists and is active in affiliates table
+            4. Verify event exists and is active in events table
+            5. Security check: Ensure event is approved by admin (isApprovedByAdmin = true)
+            6. Verify form exists and is associated with the event via events_forms table
+            7. Check for duplicate registration in affiliate_event_responses table
+            8. Prepare registration data with status "submitted" and current timestamp
+            9. Insert registration record in affiliate_event_responses table
+            10. Return success response with role-specific message (supports all affiliate roles)
+            11. Note: Comprehensive validation and payment verification included
+
+    Get Registered Affiliates:
+        API: /api/events/:eventId/affiliates
+        Method: GET
+        Flow:
+            1. Validate event ID is provided and numeric
+            2. Verify event exists and is not deleted in events table
+            3. Query affiliate_event_responses table with left join to affiliates table
+            4. Select registration details and affiliate profile information
+            5. Filter by event ID and non-deleted registrations
+            6. Return registered affiliates with count and detailed information
+            7. Include payment details and affiliate metadata (name, email, phone, role, sports category, position)
+            8. Note: Organization-only endpoint for viewing event registrations
+
+    Get Events by Organization:
+        API: /api/events/organization/:organizationId
+        Method: GET
+        Flow:
+            1. Validate organization ID is provided and numeric
+            2. Validate JWT organization ID matches the requested organization ID (prevents cross-organization access)
+            3. Verify organization exists and is not deleted in sports_organizations table
+            4. Parse query parameters for pagination (page, limit) and filtering (eventType, isApprovedByAdmin, name, venue)
+            5. Build query with left join between events and events_forms tables
+            6. Select all event fields and associated formId
+            7. Apply filters based on query parameters:
+                - organizationId (exact match - required)
+                - eventType (exact match)
+                - isApprovedByAdmin (boolean filter)
+                - name (partial match with ilike)
+                - venue (partial match with ilike)
+            8. Apply pagination with page and limit (default limit: 10)
+            9. Order results by created_at timestamp (newest first)
+            10. Filter out deleted events and event-form mappings
+            11. Execute query and get total count for pagination
+            12. Return events with pagination metadata, count, and organization name
+            13. Return 404 if no events found for organization
+            14. Note: Organization-only endpoint, requires organization JWT authentication with cross-organization access prevention
+
+Security Measures:
+    - JWT-based authentication with Redis caching for all protected endpoints
+    - Role-based access control (Organization, Affiliate, Super Admin)
+    - Input validation using Joi schemas for all request bodies
+    - Soft deletes for data integrity and audit trail
+    - Payment verification for event registrations
+    - Organization ownership validation for events
+    - Admin approval required for event registration eligibility
+    - Duplicate registration prevention
+    - Support for all affiliate roles (ATHLETE, COACH, SPORTS STAFF, NUTRITIONIST, PHYSIOTHERAPIST, PSYCHOLOGIST, SPORTS JOURNALIST, SPORTS MANAGEMENT PROFESSIONAL)
+
+Performance Optimizations:
+    - Database indexing on frequently queried fields (event_id, affiliate_id, organization_id)
+    - Redis caching for JWT tokens and sessions
+    - Selective field updates to minimize database operations
+    - Efficient joins for event-form associations
+    - Query optimization with proper filtering and pagination support
+
+Forms API Flows
+    Create Form:
+        API: /api/forms
+        Method: POST
+        Flow:
+            1. Validate input data matches schema (formName, header, organizationId, form_values, type, minPlayers, maxPlayers)
+            2. Validate form_values JSON structure with field definitions (id, label, type, required, options)
+            3. Verify organization exists and is approved in sports_organizations table
+            4. Check for duplicate form names within the same organization in forms table
+            5. Validate minPlayers/maxPlayers relationship and Team Sports requirements
+            6. Prepare form data with security defaults (deleted: false, createdAt timestamp)
+            7. Store form_values as JSON string in forms table
+            8. Insert form record with organizationId association
+            9. Return success response with created form data (form_values parsed back to object)
+            10. Note: Organization authentication required via organizationAuth middleware
+
+    Get All Forms:
+        API: /api/forms
+        Method: GET
+        Flow:
+            1. Validate query parameters (organizationId, type, formName, page, limit)
+            2. Build query with left join between forms and sports_organizations tables
+            3. Select form fields and organization name
+            4. Apply filters based on query parameters:
+                - organizationId (exact match)
+                - type (Team Sports or Individual Play)
+                - formName (partial match with ilike)
+            5. Apply pagination with page and limit (default limit: 10)
+            6. Filter out deleted forms (deleted = false)
+            7. Execute query and get total count for pagination
+            8. Parse form_values JSON for each form in response
+            9. Return forms with pagination metadata and count
+            10. Note: Public endpoint, no authentication required
+
+    Get Form by ID:
+        API: /api/forms/:formId
+        Method: GET
+        Flow:
+            1. Validate form ID is provided and numeric
+            2. Query forms table with left join to sports_organizations table
+            3. Select form details and organization name
+            4. Filter by form ID and non-deleted status
+            5. Parse form_values JSON for response
+            6. Return form data or 404 if not found
+            7. Note: Public endpoint for viewing form details
+
+    Update Form:
+        API: /api/forms/:formId
+        Method: PUT
+        Flow:
+            1. Validate form ID is provided and numeric
+            2. Validate update data matches schema (all fields optional)
+            3. Check if request body contains data to update
+            4. Verify form exists and is not deleted in forms table
+            5. Check for duplicate form name if formName is being updated
+            6. Build update object with only provided fields from updatable fields list
+            7. Convert form_values to JSON string if provided
+            8. Update form record in forms table where id matches and deleted = false
+            9. Parse form_values back to object for response
+            10. Return updated form data
+            11. Note: Organization authentication required, selective field updates
+
+    Delete Form:
+        API: /api/forms/:formId
+        Method: DELETE
+        Flow:
+            1. Validate form ID is provided and numeric
+            2. Verify form exists and is not already deleted in forms table
+            3. Check if form is currently used by any active events in events_forms table
+            4. Prevent deletion if form is associated with active events
+            5. Return error with list of active events using the form if applicable
+            6. Soft delete the form by setting deleted = true
+            7. Return success response
+            8. Note: Organization authentication required, prevents deletion of forms in use
+
+    Get Organization Forms:
+        API: /api/forms/organization/:organizationId
+        Method: GET
+        Flow:
+            1. Validate organization ID is provided and numeric
+            2. Verify organization exists and is not deleted in sports_organizations table
+            3. Query forms table filtering by organizationId and non-deleted status
+            4. Order results by createdAt timestamp (newest first)
+            5. Parse form_values JSON for each form
+            6. Return organization forms with count and organization name
+            7. Note: Public endpoint for viewing organization-specific forms
+
+Forms Security Measures:
+    - JWT-based authentication with organizationAuth middleware for form management
+    - Organization ownership validation for form operations
+    - Input validation using Joi schemas with nested form field validation
+    - Soft deletes for data integrity and audit trail
+    - Duplicate form name prevention within organizations
+    - Form usage validation before deletion (prevents deletion of forms used by active events)
+    - JSON schema validation for form_values structure
+    - Support for both Team Sports and Individual Play form types with appropriate validation
+
+Forms Performance Optimizations:
+    - Database indexing on organizationId and deleted status
+    - Pagination support for large form datasets
+    - Selective field updates to minimize database operations
+    - Efficient joins with sports_organizations table for organization details
+    - JSON parsing optimization for form_values field
+    - Query optimization with proper filtering and ordering

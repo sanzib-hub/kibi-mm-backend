@@ -1,0 +1,85 @@
+Note: The SMS Module is mocked for non-prod environment, based on the NODE_ENV variable from .env file
+
+Affiliate API Flows
+    Request OTP:
+        API: /affiliate/request-otp
+        Method: POST
+        Flow:
+            1. Validate input data matches schema (phone, invitationCode)
+            2. Check if invitation code exists and is ACTIVE in invitation_codes table
+            3. Validate invitation code has not expired
+            4. For AFFILIATE type invitations, ensure phone number matches recipientPhone
+            5. Check if OTP is already cached for this phone number
+            6. If cached OTP exists and is still valid, return existing OTP without sending SMS
+            7. If no cached OTP, generate new 6-digit OTP
+            8. Cache OTP for 5 minutes to prevent spam requests
+            9. Clean up any existing OTP records for this phone and type AFFILIATE_SIGNUP
+            10. Insert new OTP verification record with phone, otp, type, invitationCode, attempts=0
+            11. Send OTP via SMS service
+            12. Return success response with phone and expiration time
+
+    Verify OTP and Signup:
+        API: /affiliate/verify-otp-signup
+        Method: POST
+        Flow:
+            1. Validate input data matches schema (phone, otp, invitationCode, password)
+            2. Check if OTP exists in cache and matches provided OTP
+            3. If cached OTP matches, invalidate cache and proceed
+            4. If no cached OTP, fallback to database verification:
+                a. Find OTP record by phone, type AFFILIATE_SIGNUP, and invitationCode
+                b. Check if OTP has expired
+                c. Check if OTP was already verified
+                d. Check if attempts >= 3 (rate limiting)
+                e. Verify OTP matches, increment attempts if wrong
+            5. Retrieve invitation details from invitation_codes table
+            6. Hash the provided password
+            7. If invitation type is AFFILIATE:
+                a. Get affiliateId from invitation metadata
+                b. Update affiliate record: set invitationStatus=ACCEPTED, status=ACTIVE
+                c. Mark invitation code as USED with usedAt and usedBy
+                d. Mark OTP as verified
+                e. Check for cached JWT token for this affiliate
+                f. If no cached token, generate new JWT with affiliate context
+                g. Cache JWT for 1 hour
+                h. Return success with token and affiliate data
+            8. If invitation type is NON_AFFILIATE:
+                a. Insert new affiliate record with ACCEPTED status and ACTIVE status
+                b. Mark invitation code as USED
+                c. Mark OTP as verified
+                d. Generate JWT token
+                e. Return success with token and affiliate data
+
+    Request Non-Affiliate Invitation:
+        API: /affiliate/request-invitation
+        Method: POST
+        Flow:
+            1. Validate input data matches schema (name, email, phone, sportsCategory, experience, reason, documents)
+            2. Check if pending request already exists for this phone number in non_affiliate_requests table
+            3. If existing pending request found, return error
+            4. Insert new record in non_affiliate_requests table with status PENDING
+            5. Return success response with requestId, status, and submittedAt timestamp
+
+    Affiliate Login:
+        API: /affiliate/login
+        Method: POST
+        Flow:
+            1. Validate input data matches schema (phone, password)
+            2. Find affiliate by phone number where deleted = false
+            3. If affiliate not found, return invalid credentials error
+            4. Check if affiliate status is ACTIVE
+            5. If status is not ACTIVE, return account status error
+            6. TODO: Implement password verification (currently not implemented)
+            7. Generate JWT token with affiliate id, type AFFILIATE, and organizationId
+            8. Return success response with token and affiliate profile data
+
+    Get Profile:
+        API: /affiliate/profile
+        Method: GET
+        Authentication: Required (Affiliate only)
+        Flow:
+            1. Get affiliate id from JWT token
+            2. Join affiliates table with sports_organizations table
+            3. Select affiliate profile fields and organization name
+            4. Filter by affiliate id and deleted = false
+            5. If affiliate not found, return 404 error
+            6. Return success response with complete affiliate profile including organization name

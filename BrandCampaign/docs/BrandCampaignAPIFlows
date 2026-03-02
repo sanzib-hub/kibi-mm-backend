@@ -1,0 +1,447 @@
+# KIBI BrandCampaign Service - API Flow Documentation
+
+This document outlines the complete API flows for the KIBI BrandCampaign microservice, including authentication, validation, database operations, and response handling.
+
+## Authentication Overview
+
+The BrandCampaign service supports three types of authentication:
+- **Super Admin**: Full access to all campaign management operations
+- **Affiliate**: Can register for campaigns and view campaign details
+- **General Authentication**: Basic access to public campaign information
+
+All JWT tokens are cached in Redis for performance optimization with 1-hour expiry.
+
+---
+
+## 1. Create Campaign
+
+**Endpoint:** `POST /api/campaigns`
+**Authentication:** Super Admin only
+**Description:** Creates a new brand campaign
+
+### Flow Steps:
+
+1. **Authentication Validation**
+   - Verify Bearer token in Authorization header
+   - Check if token exists in Redis cache for performance
+   - Validate JWT signature and expiry
+   - Confirm user type is SUPER_ADMIN
+   - Verify admin exists in super_admin table and is active
+
+2. **Request Validation**
+   - Validate request body using Joi schema (createCampaignSchema)
+   - Required fields: description, brandName, product, sportsCategory, ageRange, gender, geography, followersRange, dealType, deliverables, budget
+   - Optional fields: logo, active (defaults to true)
+   - Validate gender enum: MALE, FEMALE, OTHER
+   - Validate dealType enum: PAID, BARTER, HYBRID
+
+3. **Database Operations**
+   - Insert new campaign into campaigns table
+   - Set createdAt and updatedAt timestamps
+   - Set deleted flag to false by default
+   - Return complete campaign data
+
+4. **Response Handling**
+   - Return 201 Created with campaign data
+   - Include success message and campaign details
+   - Handle database errors with 500 Internal Server Error
+
+---
+
+## 2. Update Campaign
+
+**Endpoint:** `PUT /api/campaigns/:id`
+**Authentication:** Super Admin only
+**Description:** Updates an existing campaign
+
+### Flow Steps:
+
+1. **Authentication Validation**
+   - Same as Create Campaign flow
+
+2. **Parameter Validation**
+   - Validate campaign ID parameter is numeric
+   - Return 400 Bad Request for invalid ID
+
+3. **Request Validation**
+   - Validate request body using updateCampaignSchema
+   - All fields are optional but at least one must be provided
+   - Validate enum values if provided
+
+4. **Campaign Existence Check**
+   - Query campaigns table for campaign with given ID
+   - Verify campaign exists and is not deleted
+   - Return 404 Not Found if campaign doesn't exist
+
+5. **Database Operations**
+   - Update campaign with provided fields
+   - Update updatedAt timestamp
+   - Return updated campaign data
+
+6. **Response Handling**
+   - Return 200 OK with updated campaign data
+   - Handle database errors appropriately
+
+---
+
+## 3. Delete Campaign
+
+**Endpoint:** `DELETE /api/campaigns/:id`
+**Authentication:** Super Admin only
+**Description:** Soft deletes a campaign
+
+### Flow Steps:
+
+1. **Authentication Validation**
+   - Same as Create Campaign flow
+
+2. **Parameter Validation**
+   - Validate campaign ID parameter
+
+3. **Campaign Existence Check**
+   - Verify campaign exists and is not already deleted
+
+4. **Database Operations**
+   - Perform soft delete by setting deleted = true
+   - Update updatedAt timestamp
+   - Maintain data integrity for existing registrations
+
+5. **Response Handling**
+   - Return 200 OK with success message
+   - No campaign data returned for security
+
+---
+
+## 4. Get All Campaigns
+
+**Endpoint:** `GET /api/campaigns`
+**Authentication:** Basic authentication required
+**Description:** Retrieves campaigns with filtering and pagination
+
+### Flow Steps:
+
+1. **Authentication Validation**
+   - Verify valid JWT token (any authenticated user type)
+   - Cache token in Redis if not already cached
+
+2. **Query Parameter Validation**
+   - Validate pagination parameters (page, limit)
+   - Validate filter parameters (brandName, sportsCategory, gender, dealType, active, geography, followersRange, ageRange)
+   - Set defaults: page=1, limit=10
+   - Maximum limit of 100 per page
+
+3. **Database Query Construction**
+   - Build dynamic query with filters
+   - Apply ILIKE for partial text matches
+   - Filter out deleted campaigns
+   - Order by createdAt descending
+
+4. **Pagination Calculation**
+   - Calculate total count for pagination metadata
+   - Apply LIMIT and OFFSET for pagination
+   - Calculate totalPages, hasNext, hasPrev
+
+5. **Response Handling**
+   - Return campaigns with pagination metadata
+   - Include count and navigation information
+   - Handle empty results gracefully
+
+---
+
+## 5. Get Campaign by ID
+
+**Endpoint:** `GET /api/campaigns/:id`
+**Authentication:** Basic authentication required
+**Description:** Retrieves a specific campaign by ID
+
+### Flow Steps:
+
+1. **Authentication Validation**
+   - Basic JWT validation for any authenticated user
+
+2. **Parameter Validation**
+   - Validate campaign ID parameter
+
+3. **Database Operations**
+   - Query campaigns table for specific campaign
+   - Filter out deleted campaigns
+   - Return complete campaign details
+
+4. **Response Handling**
+   - Return 200 OK with campaign data
+   - Return 404 Not Found if campaign doesn't exist
+
+---
+
+## 6. Get Active Campaigns
+
+**Endpoint:** `GET /api/campaigns/active`
+**Authentication:** Basic authentication required
+**Description:** Retrieves all active campaigns
+
+### Flow Steps:
+
+1. **Authentication Validation**
+   - Basic JWT validation
+
+2. **Database Operations**
+   - Query campaigns where active = true and deleted = false
+   - Order by createdAt descending
+   - No pagination applied
+
+3. **Response Handling**
+   - Return all active campaigns
+   - Include count in response
+
+---
+
+## 7. Register Affiliate for Campaign
+
+**Endpoint:** `POST /api/campaigns/register`
+**Authentication:** Affiliate authentication required
+**Description:** Registers an affiliate for a campaign
+
+### Flow Steps:
+
+1. **Authentication Validation**
+   - Verify affiliate JWT token (AFFILIATE user types)
+   - Check affiliate exists in affiliates table
+   - Verify affiliate status is VERIFIED
+
+2. **Request Validation**
+   - Validate campaign_id and affiliate_id
+   - Optional status and additionalData fields
+   - Default status to REGISTERED
+
+3. **Campaign Validation**
+   - Verify campaign exists and is active
+   - Campaign must not be deleted
+
+4. **Affiliate Validation**
+   - Verify affiliate exists and is verified
+   - Check affiliate is not deleted
+
+5. **Duplicate Registration Check**
+   - Query campaign_affiliate_registrations table
+   - Prevent duplicate registrations for same campaign-affiliate pair
+   - Return 400 Bad Request if already registered
+
+6. **Database Operations**
+   - Insert new registration record
+   - Set registration timestamp
+   - Include campaign and affiliate details in response
+
+7. **Response Handling**
+   - Return 201 Created with registration details
+   - Include campaign and affiliate summary information
+
+---
+
+## 8. Get Campaign Registrations
+
+**Endpoint:** `GET /api/campaigns/:campaignId/registrations`
+**Authentication:** Super Admin only
+**Description:** Retrieves registrations for a specific campaign
+
+### Flow Steps:
+
+1. **Authentication Validation**
+   - Super Admin authentication required
+
+2. **Parameter Validation**
+   - Validate campaignId parameter
+   - Validate optional query parameters (status, affiliate_id, page, limit)
+
+3. **Campaign Validation**
+   - Verify campaign exists
+
+4. **Database Query with Joins**
+   - Join campaign_affiliate_registrations with affiliates table
+   - Include affiliate details (name, email, role, sportsCategory)
+   - Apply filters if provided
+   - Implement pagination
+
+5. **Response Handling**
+   - Return registrations with affiliate details
+   - Include campaign summary and pagination metadata
+
+---
+
+## 9. Get Eligible Unregistered Affiliates
+
+**Endpoint:** `GET /api/campaigns/:campaignId/eligible-affiliates`
+**Authentication:** Super Admin only
+**Description:** Retrieves affiliates who are eligible for a campaign but not yet registered
+
+### Flow Steps:
+
+1. **Authentication Validation**
+   - Super Admin authentication required
+   - Verify Bearer token and admin permissions
+
+2. **Parameter Validation**
+   - Validate campaignId parameter (required)
+   - Parse and validate pagination parameters (page, limit)
+   - Set default values: page=1, limit=10, max limit=100
+
+3. **Campaign Validation**
+   - Verify campaign exists and is not deleted
+   - Retrieve campaign targeting criteria (ageRange, gender, geography, followersRange)
+
+4. **Eligibility Query Construction**
+   - Base query: Select verified affiliates who are not deleted
+   - Exclude affiliates already registered for the campaign using NOT IN subquery
+   - Apply campaign targeting filters:
+     - Gender filter: Match campaign gender requirement (skip if "ANY")
+     - Age range filter: Calculate date boundaries and filter by dateOfBirth
+     - Geography and followers range: Noted as not implemented (requires additional affiliate fields)
+
+5. **Database Operations**
+   - Execute count query for pagination metadata
+   - Execute main query with pagination (LIMIT/OFFSET)
+   - Order results by creation date (newest first)
+
+6. **Eligibility Analysis**
+   - Calculate age for each affiliate from dateOfBirth
+   - Determine matching criteria for each affiliate
+   - Add eligibility details including:
+     - matchingCriteria array (gender, ageRange)
+     - notes array for unimplemented criteria
+
+7. **Response Handling**
+   - Return eligible affiliates with complete profile data
+   - Include campaign targeting criteria summary
+   - Provide pagination metadata (currentPage, totalPages, totalCount, hasNext/PreviousPage)
+   - Include eligibility analysis for each affiliate
+
+### Query Parameters:
+- `page` (optional): Page number for pagination (default: 1)
+- `limit` (optional): Number of results per page (default: 10, max: 100)
+
+### Response Structure:
+```json
+{
+  "success": true,
+  "message": "Eligible unregistered affiliates retrieved successfully",
+  "data": {
+    "campaign": {
+      "id": 1,
+      "brandName": "Nike",
+      "targetingCriteria": {
+        "ageRange": "18-25",
+        "gender": "MALE",
+        "geography": "India",
+        "followersRange": "10k-100k"
+      }
+    },
+    "affiliates": [
+      {
+        "id": 123,
+        "name": "John Doe",
+        "role": "ATHLETE",
+        "email": "john@example.com",
+        "age": 22,
+        "eligibilityDetails": {
+          "matchingCriteria": ["gender", "ageRange"],
+          "notes": ["Geography matching not yet implemented"]
+        }
+      }
+    ],
+    "pagination": {
+      "currentPage": 1,
+      "totalPages": 5,
+      "totalCount": 50,
+      "limit": 10,
+      "hasNextPage": true,
+      "hasPreviousPage": false
+    }
+  }
+}
+```
+
+---
+
+## 10. Update Campaign Registration
+
+**Endpoint:** `PUT /api/campaigns/registrations/:registrationId`
+**Authentication:** Super Admin only
+**Description:** Updates registration status
+
+### Flow Steps:
+
+1. **Authentication Validation**
+   - Super Admin authentication required
+
+2. **Parameter Validation**
+   - Validate registrationId parameter
+
+3. **Request Validation**
+   - Validate status field (required)
+   - Validate status enum values
+   - Optional additionalData field
+
+4. **Registration Existence Check**
+   - Verify registration exists and is not deleted
+
+5. **Database Operations**
+   - Update registration status and additionalData
+   - Update updatedAt timestamp
+
+6. **Response Handling**
+   - Return updated registration data
+
+---
+
+## 10. Get Sports Categories
+
+**Endpoint:** `GET /api/campaigns/sports-categories`
+**Authentication:** Basic authentication required
+**Description:** Retrieves unique sports categories from active campaigns
+
+### Flow Steps:
+
+1. **Authentication Validation**
+   - Basic JWT validation
+
+2. **Database Operations**
+   - Query distinct sportsCategory from campaigns
+   - Filter active and non-deleted campaigns only
+
+3. **Data Formatting**
+   - Format categories with ID and name structure
+   - Handle empty results
+
+4. **Response Handling**
+   - Return formatted categories list
+   - Include count information
+
+---
+
+## Security Measures
+
+1. **JWT Token Caching**: All valid tokens cached in Redis for 1 hour
+2. **Input Validation**: Comprehensive Joi schema validation for all inputs
+3. **SQL Injection Prevention**: Kysely ORM provides parameterized queries
+4. **Soft Deletes**: Data integrity maintained through soft deletion
+5. **Role-Based Access**: Strict authentication requirements per endpoint
+6. **Rate Limiting**: Redis-based rate limiting available
+7. **Error Handling**: Sanitized error messages in production
+
+## Performance Optimizations
+
+1. **Database Indexing**: Proper indexes on frequently queried columns
+2. **Pagination**: Efficient pagination with count optimization
+3. **Caching Strategy**: JWT and session caching in Redis
+4. **Query Optimization**: Selective field queries and efficient joins
+5. **Connection Pooling**: PostgreSQL connection pooling for scalability
+
+## Error Handling
+
+- **400 Bad Request**: Invalid input data or parameters
+- **401 Unauthorized**: Missing or invalid authentication token
+- **403 Forbidden**: Insufficient permissions for operation
+- **404 Not Found**: Resource not found or deleted
+- **409 Conflict**: Duplicate registration attempts
+- **500 Internal Server Error**: Database or server errors
+
+All errors include descriptive messages and appropriate HTTP status codes.

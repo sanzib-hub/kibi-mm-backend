@@ -26,3 +26,14 @@ exports.validateLogin = [
     next();
   },
 ];
+
+exports.validateRefresh = [
+  body('refreshToken').notEmpty().withMessage('Refresh token required'),
+  (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(422).json({ success: false, error: 'VALIDATION_ERROR', fields: errors.array() });
+    }
+    next();
+  },
+];

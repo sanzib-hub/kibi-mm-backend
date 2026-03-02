@@ -1,0 +1,52 @@
+# Lambda Dockerfile - extends production Dockerfile with AWS Lambda Runtime
+# Multi-stage build for Lambda deployment
+
+# Build stage - reuse production build process
+FROM node:18-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache python3 make g++
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including devDependencies for build)
+RUN npm ci
+
+# Copy source code
+COPY src ./src
+COPY tsconfig.json tsconfig.prod.json ./
+
+# Build the application with memory optimization
+ENV NODE_OPTIONS="--max-old-space-size=2048"
+RUN npm run build:prod
+
+# Lambda Runtime stage
+FROM public.ecr.aws/lambda/nodejs:20
+
+# Copy AWS Lambda Web Adapter to handle HTTP requests
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.8.4 /lambda-adapter /opt/extensions/lambda-adapter
+
+# Copy package files
+COPY package*.json ./
+
+# Install only production dependencies
+RUN npm ci --only=production --ignore-scripts
+
+# Copy built application from builder stage
+COPY --from=builder /app/dist ./dist
+
+# Set environment variables for Lambda Web Adapter
+ENV PORT=8080
+ENV READINESS_CHECK_PORT=8080
+ENV READINESS_CHECK_PATH=/health
+ENV AWS_LWA_INVOKE_MODE=response_stream
+
+# Set working directory to Lambda task root
+WORKDIR ${LAMBDA_TASK_ROOT}
+
+# Start the Express server (Lambda Web Adapter will handle the rest)
+CMD ["node", "dist/server.js"]

@@ -11,7 +11,12 @@ module.exports = function auth(req, res, next) {
     const payload = jwt.verify(header.slice(7), config.jwtSecret);
     req.user = payload; // { id, brandAccountId, email, role }
     next();
-  } catch {
-    res.status(401).json({ success: false, error: 'Invalid or expired token' });
+  } catch (err) {
+    const isExpired = err.name === 'TokenExpiredError';
+    res.status(401).json({
+      success: false,
+      error: isExpired ? 'OAuth token has expired. Please obtain a new token or refresh your existing token.' : 'Invalid or expired token',
+      code: isExpired ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN',
+    });
   }
 };

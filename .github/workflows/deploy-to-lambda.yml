@@ -1,0 +1,449 @@
+name: Deploy to AWS Lambda
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      services:
+        description: 'Services to deploy (comma-separated: onboarding,events,brandcampaign,payments or "all")'
+        required: true
+        default: 'all'
+      image_tag:
+        description: 'ECR image tag to deploy (default: latest)'
+        required: false
+        default: 'latest'
+      aws_region:
+        description: 'aws region that to be used (default: ap-south-1)'
+        required: false
+        default: 'ap-south-1'
+
+env:
+  AWS_REGION: ${{ github.event.inputs.aws_region }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ github.event.inputs.aws_region }}.amazonaws.com
+
+jobs:
+  approval:
+    runs-on: ubuntu-latest
+    environment: 
+      name: ${{ github.event.inputs.environment }}
+    steps:
+      - name: Manual Approval Required
+        run: |
+          echo "# 🔐 Deployment Approval Required" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📋 Deployment Details" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | \`${{ github.event.inputs.environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **AWS Region** | \`${{ github.event.inputs.aws_region }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Services** | \`${{ github.event.inputs.services }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image Tag** | \`${{ github.event.inputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Triggered By** | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **ECR Registry** | \`${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ github.event.inputs.aws_region }}.amazonaws.com\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 🎯 Services to Deploy" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          SERVICES_INPUT="${{ github.event.inputs.services }}"
+          
+          if [ "$SERVICES_INPUT" = "all" ]; then
+            echo "### All Services Selected:" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ **OnBoarding Service** (\`kibi-onboarding-service\`)" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ **Events Service** (\`kibi-events-service\`)" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ **BrandCampaign Service** (\`kibi-brandcampaign-service\`)" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ **Payments Service** (\`kibi-payment-service\`)" >> $GITHUB_STEP_SUMMARY
+
+          else
+            echo "### Selected Services:" >> $GITHUB_STEP_SUMMARY
+            if echo "$SERVICES_INPUT" | grep -q "onboarding"; then
+              echo "- ✅ **OnBoarding Service** (\`kibi-onboarding-service\`)" >> $GITHUB_STEP_SUMMARY
+            fi
+            if echo "$SERVICES_INPUT" | grep -q "events"; then
+              echo "- ✅ **Events Service** (\`kibi-events-service\`)" >> $GITHUB_STEP_SUMMARY
+            fi
+            if echo "$SERVICES_INPUT" | grep -q "brandcampaign"; then
+              echo "- ✅ **BrandCampaign Service** (\`kibi-brandcampaign-service\`)" >> $GITHUB_STEP_SUMMARY
+            fi
+            if echo "$SERVICES_INPUT" | grep -q "payments"; then
+              echo "- ✅ **Payments Service** (\`kibi-payment-service\`)" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔧 Lambda Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Memory | Timeout | Image |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "$SERVICES_INPUT" = "all" ] || echo "$SERVICES_INPUT" | grep -q "onboarding"; then
+            echo "| kibi-onboarding-service | 1024 MB | 30s | \`${{ github.event.inputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "$SERVICES_INPUT" = "all" ] || echo "$SERVICES_INPUT" | grep -q "events"; then
+            echo "| kibi-events-service | 1024 MB | 30s | \`${{ github.event.inputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "$SERVICES_INPUT" = "all" ] || echo "$SERVICES_INPUT" | grep -q "brandcampaign"; then
+            echo "| kibi-brandcampaign-service | 1024 MB | 30s | \`${{ github.event.inputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "$SERVICES_INPUT" = "all" ] || echo "$SERVICES_INPUT" | grep -q "payments"; then
+            echo "| kibi-payment-service | 1024 MB | 30s | \`${{ github.event.inputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔐 Environment Variables (to be configured)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The following environment variables will be set on the Lambda functions:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Variable | Description | Source |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| \`DB_HOST\` | Database hostname | GitHub Secret |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`DB_PORT\` | Database port | GitHub Secret |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`DB_NAME\` | Database name | GitHub Secret |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`DB_USER\` | Database username | GitHub Secret |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`DB_PASSWORD\` | Database password | GitHub Secret |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`REDIS_HOST\` | Redis hostname | GitHub Secret |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`REDIS_PORT\` | Redis port | GitHub Secret |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`JWT_SECRET\` | JWT signing secret | GitHub Secret |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`NODE_ENV\` | Node environment | \`${{ github.event.inputs.environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## ⚠️ Pre-Deployment Checklist" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Before approving, please verify:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Docker image \`${{ github.event.inputs.image_tag }}\` exists in ECR" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] All required Lambda functions exist in AWS" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Database connections are stable" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Redis is accessible" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] No active incidents in ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Rollback plan is ready" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Deployment Actions" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Upon approval, the workflow will:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Update Lambda function code with new Docker image" >> $GITHUB_STEP_SUMMARY
+          echo "2. Update function configuration (memory, timeout)" >> $GITHUB_STEP_SUMMARY
+          echo "3. Update environment variables from GitHub Secrets" >> $GITHUB_STEP_SUMMARY
+          echo "4. Wait for each update to complete before proceeding" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "**⏰ Waiting for manual approval...**" >> $GITHUB_STEP_SUMMARY
+
+  deploy-lambda:
+    needs: approval
+    runs-on: ubuntu-latest
+    environment: 
+      name: ${{ github.event.inputs.environment }}
+    strategy:
+      matrix:
+        service:
+          - name: onboarding
+            function: kibi-onboarding-service
+            memory: 1024
+            timeout: 30
+          - name: events
+            function: kibi-events-service
+            memory: 1024
+            timeout: 30
+          - name: brandcampaign
+            function: kibi-brandcampaign-service
+            memory: 1024
+            timeout: 30
+          - name: payments
+            function: kibi-payment-service
+            memory: 1024
+            timeout: 30
+
+    
+    steps:
+      - name: Check if service should be deployed
+        id: check-deploy
+        run: |
+          SERVICES_INPUT="${{ github.event.inputs.services }}"
+          SERVICE_NAME="${{ matrix.service.name }}"
+          
+          if [ "$SERVICES_INPUT" = "all" ] || echo "$SERVICES_INPUT" | grep -q "$SERVICE_NAME"; then
+            echo "deploy=true" >> $GITHUB_OUTPUT
+            echo "✅ Will deploy $SERVICE_NAME"
+          else
+            echo "deploy=false" >> $GITHUB_OUTPUT
+            echo "⏭️  Skipping $SERVICE_NAME"
+          fi
+
+      - name: Configure AWS credentials
+        if: steps.check-deploy.outputs.deploy == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify Lambda function exists
+        if: steps.check-deploy.outputs.deploy == 'true'
+        run: |
+          echo "🔍 Verifying Lambda function exists: ${{ matrix.service.function }}"
+          if aws lambda get-function --function-name ${{ matrix.service.function }} --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            echo "✅ Lambda function ${{ matrix.service.function }} exists"
+          else
+            echo "❌ Lambda function ${{ matrix.service.function }} does not exist!"
+            echo "Please create the Lambda function first using Terraform, CloudFormation, or AWS Console."
+            exit 1
+          fi
+
+      - name: Update Lambda function code
+        if: steps.check-deploy.outputs.deploy == 'true'
+        run: |
+          IMAGE_URI="${{ env.ECR_REGISTRY }}/${{ matrix.service.function }}:${{ github.event.inputs.image_tag }}"
+          
+          echo "🚀 Updating Lambda function with image: $IMAGE_URI"
+          aws lambda update-function-code \
+            --function-name ${{ matrix.service.function }} \
+            --image-uri $IMAGE_URI \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "⏳ Waiting for update to complete..."
+          aws lambda wait function-updated \
+            --function-name ${{ matrix.service.function }} \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "✅ Code update completed successfully"
+
+      - name: Update Lambda function configuration
+        if: steps.check-deploy.outputs.deploy == 'true'
+        run: |
+          echo "⚙️ Updating function configuration..."
+          aws lambda update-function-configuration \
+            --function-name ${{ matrix.service.function }} \
+            --timeout ${{ matrix.service.timeout }} \
+            --memory-size ${{ matrix.service.memory }} \
+            --region ${{ env.AWS_REGION }}
+
+          echo "⏳ Waiting for configuration update to complete..."
+          aws lambda wait function-updated \
+            --function-name ${{ matrix.service.function }} \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "✅ Configuration update completed successfully"
+
+      - name: Update environment variables
+        if: steps.check-deploy.outputs.deploy == 'true'
+        run: |
+          echo "🔧 Updating environment variables..."
+          aws lambda update-function-configuration \
+            --function-name ${{ matrix.service.function }} \
+            --environment Variables="{
+              DB_HOST=${{ secrets.DB_HOST }},
+              DB_PORT=${{ secrets.DB_PORT }},
+              DB_NAME=${{ secrets.DB_NAME }},
+              DB_USER=${{ secrets.DB_USER }},
+              DB_PASSWORD=${{ secrets.DB_PASSWORD }},
+              REDIS_HOST=${{ secrets.REDIS_HOST }},
+              REDIS_PORT=${{ secrets.REDIS_PORT }},
+              JWT_SECRET=${{ secrets.JWT_SECRET }},
+              NODE_ENV=${{ github.event.inputs.environment }}
+            }" \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "⏳ Waiting for environment update to complete..."
+          aws lambda wait function-updated \
+            --function-name ${{ matrix.service.function }} \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "✅ Environment variables updated successfully"
+
+      - name: Get function URL
+        if: steps.check-deploy.outputs.deploy == 'true'
+        id: get-url
+        run: |
+          FUNCTION_ARN=$(aws lambda get-function --function-name ${{ matrix.service.function }} --region ${{ env.AWS_REGION }} --query 'Configuration.FunctionArn' --output text)
+          echo "function_arn=$FUNCTION_ARN" >> $GITHUB_OUTPUT
+          echo "✅ Deployed: $FUNCTION_ARN"
+
+  deployment-summary:
+    needs: [approval, deploy-lambda]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Generate Deployment Summary
+        run: |
+          echo "# 🚀 Lambda Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow:** \`${{ github.workflow }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** \`${{ github.event.inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Region:** \`${{ github.event.inputs.aws_region }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Tag:** \`${{ github.event.inputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp:** \`$(date -u +"%Y-%m-%d %H:%M:%S UTC")\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### 🎯 Deployment Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Services Requested:** \`${{ github.event.inputs.services }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **ECR Registry:** \`${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ github.event.inputs.aws_region }}.amazonaws.com\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 📦 Lambda Function Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Function Name | Memory | Timeout | Image | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|---------------|--------|---------|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          
+          # Check which services should be deployed
+          SERVICES_INPUT="${{ github.event.inputs.services }}"
+          
+          # OnBoarding Service
+          if [ "$SERVICES_INPUT" = "all" ] || echo "$SERVICES_INPUT" | grep -q "onboarding"; then
+            if [ "${{ needs.deploy-lambda.result }}" == "success" ]; then
+              echo "| 🏢 **OnBoarding** | kibi-onboarding-service | 1024 MB | 30s | \`${{ github.event.inputs.image_tag }}\` | ✅ **Deployed** |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| 🏢 **OnBoarding** | kibi-onboarding-service | 1024 MB | 30s | \`${{ github.event.inputs.image_tag }}\` | ❌ **Failed** |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "| 🏢 **OnBoarding** | kibi-onboarding-service | - | - | - | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Events Service
+          if [ "$SERVICES_INPUT" = "all" ] || echo "$SERVICES_INPUT" | grep -q "events"; then
+            if [ "${{ needs.deploy-lambda.result }}" == "success" ]; then
+              echo "| 🎯 **Events** | kibi-events-service | 1024 MB | 30s | \`${{ github.event.inputs.image_tag }}\` | ✅ **Deployed** |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| 🎯 **Events** | kibi-events-service | 1024 MB | 30s | \`${{ github.event.inputs.image_tag }}\` | ❌ **Failed** |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "| 🎯 **Events** | kibi-events-service | - | - | - | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # BrandCampaign Service
+          if [ "$SERVICES_INPUT" = "all" ] || echo "$SERVICES_INPUT" | grep -q "brandcampaign"; then
+            if [ "${{ needs.deploy-lambda.result }}" == "success" ]; then
+              echo "| 🎨 **BrandCampaign** | kibi-brandcampaign-service | 1024 MB | 30s | \`${{ github.event.inputs.image_tag }}\` | ✅ **Deployed** |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| 🎨 **BrandCampaign** | kibi-brandcampaign-service | 1024 MB | 30s | \`${{ github.event.inputs.image_tag }}\` | ❌ **Failed** |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "| 🎨 **BrandCampaign** | kibi-brandcampaign-service | - | - | - | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Payments Service
+          if [ "$SERVICES_INPUT" = "all" ] || echo "$SERVICES_INPUT" | grep -q "payments"; then
+            if [ "${{ needs.deploy-lambda.result }}" == "success" ]; then
+              echo "| 🎨 **Payments** | kibi-payment-service | 1024 MB | 30s | \`${{ github.event.inputs.image_tag }}\` | ✅ **Deployed** |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| 🎨 **Payments** | kibi-payment-service | 1024 MB | 30s | \`${{ github.event.inputs.image_tag }}\` | ❌ **Failed** |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "| 🎨 **Payments** | kibi-payment-service | - | - | - | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Overall Status
+          if [ "${{ needs.deploy-lambda.result }}" == "success" ]; then
+            echo "## ✅ Overall Status: **SUCCESS**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "All requested Lambda functions were deployed successfully!" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.deploy-lambda.result }}" == "failure" ]; then
+            echo "## ❌ Overall Status: **FAILED**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "One or more Lambda deployments failed. Please check the logs above." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ⚠️ Overall Status: **${{ needs.deploy-lambda.result }}**" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📝 Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.deploy-lambda.result }}" == "success" ]; then
+            echo "#### ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Immediate Actions:**" >> $GITHUB_STEP_SUMMARY
+            echo "- Verify Lambda functions in AWS Console" >> $GITHUB_STEP_SUMMARY
+            echo "- Check CloudWatch Logs for any startup errors" >> $GITHUB_STEP_SUMMARY
+            echo "- Test endpoints using API Gateway or Function URLs" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Setup API Gateway (if not done):**" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+            echo "./setup-api-gateway.sh" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Test Individual Functions:**" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+            echo "# Test OnBoarding service" >> $GITHUB_STEP_SUMMARY
+            echo "aws lambda invoke --function-name kibi-onboarding-service --payload '{}' response.json" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "# Test Events service" >> $GITHUB_STEP_SUMMARY
+            echo "aws lambda invoke --function-name kibi-events-service --payload '{}' response.json" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "# Test BrandCampaign service" >> $GITHUB_STEP_SUMMARY
+            echo "aws lambda invoke --function-name kibi-brandcampaign-service --payload '{}' response.json" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "# Test Payments service" >> $GITHUB_STEP_SUMMARY
+            echo "aws lambda invoke --function-name kibi-payment-service --payload '{}' response.json" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Monitor Logs:**" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+            echo "# View logs for a service" >> $GITHUB_STEP_SUMMARY
+            echo "aws logs tail /aws/lambda/kibi-events-service --follow" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "#### ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Common Issues:**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "1. **Lambda function doesn't exist**" >> $GITHUB_STEP_SUMMARY
+            echo "   - This workflow only updates existing Lambda functions" >> $GITHUB_STEP_SUMMARY
+            echo "   - Create functions first using Terraform, CloudFormation, or AWS Console" >> $GITHUB_STEP_SUMMARY
+            echo "   - Function names expected: \`kibi-onboarding-service\`, \`kibi-events-service\`, \`kibi-brandcampaign-service\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "2. **Image not found in ECR**" >> $GITHUB_STEP_SUMMARY
+            echo "   - Verify image exists: \`aws ecr describe-images --repository-name kibi-events-service --image-ids imageTag=${{ github.event.inputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "   - Build image first using the 'Build and Upload on ECR' workflow" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "3. **IAM permissions issue**" >> $GITHUB_STEP_SUMMARY
+            echo "   - Ensure AWS credentials have \`lambda:UpdateFunctionCode\` and \`lambda:UpdateFunctionConfiguration\` permissions" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "4. **Missing environment secrets**" >> $GITHUB_STEP_SUMMARY
+            echo "   - Check all required secrets are configured in GitHub Environments" >> $GITHUB_STEP_SUMMARY
+            echo "   - Required: \`DB_HOST\`, \`DB_PASSWORD\`, \`JWT_SECRET\`, etc." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Troubleshooting Commands:**" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+            echo "# Check if Lambda function exists" >> $GITHUB_STEP_SUMMARY
+            echo "aws lambda get-function --function-name kibi-events-service --region ${{ github.event.inputs.aws_region }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "# Check if image exists in ECR" >> $GITHUB_STEP_SUMMARY
+            echo "aws ecr describe-images --repository-name kibi-events-service --image-ids imageTag=${{ github.event.inputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "# List all available image tags" >> $GITHUB_STEP_SUMMARY
+            echo "aws ecr list-images --repository-name kibi-events-service --region ${{ github.event.inputs.aws_region }}" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Quick Links" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- [AWS Lambda Console](https://console.aws.amazon.com/lambda/home?region=${{ github.event.inputs.aws_region }})" >> $GITHUB_STEP_SUMMARY
+          echo "- [CloudWatch Logs](https://console.aws.amazon.com/cloudwatch/home?region=${{ github.event.inputs.aws_region }}#logsV2:log-groups)" >> $GITHUB_STEP_SUMMARY
+          echo "- [ECR Repositories](https://console.aws.amazon.com/ecr/repositories?region=${{ github.event.inputs.aws_region }})" >> $GITHUB_STEP_SUMMARY
+          echo "- [API Gateway](https://console.aws.amazon.com/apigateway/home?region=${{ github.event.inputs.aws_region }})" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Fail workflow if deployment failed
+        if: needs.deploy-lambda.result == 'failure'
+        run: |
+          echo "❌ Lambda deployment failed"
+          exit 1
