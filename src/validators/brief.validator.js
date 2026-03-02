@@ -4,7 +4,7 @@ exports.validateBrief = [
   body('campaignName').trim().isLength({ min: 2, max: 120 }).withMessage('Campaign name must be 2–120 characters'),
   body('sports').isArray({ min: 1 }).withMessage('At least one sport must be selected'),
   body('sports.*').isString().trim().isLength({ min: 1 }),
-  body('budget').optional({ nullable: true }).isFloat({ min: 0, max: 10000000 }).withMessage('Budget must be between 0 and 1 Cr'),
+  body('budget').optional({ nullable: true, checkFalsy: true }).isFloat({ min: 0, max: 10000000 }).withMessage('Budget must be between 0 and 1 Cr'),
   body('startDate').optional({ nullable: true }).isISO8601().withMessage('Start date must be a valid date'),
   body('endDate').optional({ nullable: true }).isISO8601().withMessage('End date must be a valid date')
     .custom((endDate, { req }) => {

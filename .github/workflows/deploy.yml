@@ -58,7 +58,7 @@ jobs:
             --allow-unauthenticated \
             --add-cloudsql-instances prod-481408:asia-south1:kibi-mm \
             --set-env-vars NODE_ENV=production \
-            --set-env-vars DATABASE_URL="postgresql://kibiuser:${{ secrets.DB_PASSWORD }}@/kibi?host=/cloudsql/prod-481408:asia-south1:kibi-mm" \
+            --set-env-vars DATABASE_URL="postgresql://kibiuser:${{ secrets.DB_PASSWORD }}@35.244.41.55/kibi" \
             --set-env-vars JWT_SECRET=${{ secrets.JWT_SECRET }} \
             --set-env-vars JWT_EXPIRES_IN=7d \
             --set-env-vars ADMIN_API_KEY=${{ secrets.ADMIN_API_KEY }} \
@@ -70,7 +70,7 @@ jobs:
             --set-env-vars SMTP_FROM=${{ secrets.SMTP_FROM }} \
             --set-env-vars NOTIFY_EMAIL=${{ secrets.NOTIFY_EMAIL }} \
             --set-env-vars GOOGLE_SHEETS_ID=${{ secrets.GOOGLE_SHEETS_ID }} \
-            --set-env-vars GOOGLE_SERVICE_ACCOUNT_JSON=google-service-account-json:latest \
+            --set-secrets GOOGLE_SERVICE_ACCOUNT_JSON=google-service-account-json:latest \
             --set-env-vars W_SPORT=0.40 \
             --set-env-vars W_GEO=0.30 \
             --set-env-vars W_OBJECTIVE=0.20 \
