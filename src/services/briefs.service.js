@@ -7,12 +7,10 @@ function safeJson(val) {
   return JSON.stringify(val);
 }
 
-async function createBrief(data, user) {
+async function createBrief(data) {
   const brief = await prisma.$transaction(async (tx) => {
     const newBrief = await tx.campaignBrief.create({
       data: {
-        brandAccountId: user.brandAccountId,
-        brandUserId: user.id,
         campaignName: data.campaignName,
         industryCategory: data.industryCategory || null,
         budget: data.budget ? parseFloat(data.budget) : null,
@@ -51,24 +49,15 @@ async function createBrief(data, user) {
 
   // Send notifications if submitted (non-blocking)
   if (brief.brief.status === 'SUBMITTED') {
-    const brandUser = await prisma.brandUser.findUnique({
-      where: { id: user.id },
-      include: { brandAccount: true },
-    });
-    notificationService.sendBriefSubmissionNotification(
-      brief.brief,
-      brandUser,
-      brandUser.brandAccount
-    );
+    notificationService.sendBriefSubmissionNotification(brief.brief);
   }
 
   return { id: brief.brief.id, leadId: brief.lead.id, status: brief.brief.status };
 }
 
-async function getBriefForUser(briefId, userId) {
+async function getBriefById(briefId) {
   const brief = await prisma.campaignBrief.findUnique({ where: { id: briefId } });
   if (!brief) throw new Error('BRIEF_NOT_FOUND');
-  if (brief.brandUserId !== userId) throw new Error('FORBIDDEN');
   return parseBriefFields(brief);
 }
 
@@ -90,10 +79,9 @@ function hydrateTeaser(mr, asset) {
   return obj;
 }
 
-async function getLatestResults(briefId, userId) {
+async function getLatestResults(briefId) {
   const brief = await prisma.campaignBrief.findUnique({ where: { id: briefId } });
   if (!brief) throw new Error('BRIEF_NOT_FOUND');
-  if (brief.brandUserId !== userId) throw new Error('FORBIDDEN');
 
   const matchRun = await prisma.matchRun.findFirst({
     where: { briefId },
@@ -152,18 +140,17 @@ function parseBriefFields(brief) {
     targetAudience:     safe(brief.targetAudience),
     targetCities:       safe(brief.targetCities),
     targetStates:       safe(brief.targetStates),
-    targetRegions:   safe(brief.targetRegions),
-    assetCategories: safe(brief.assetCategories),
+    targetRegions:      safe(brief.targetRegions),
+    assetCategories:    safe(brief.assetCategories),
     athleteTiers:       safe(brief.athleteTiers),
     deliverables:       safe(brief.deliverables),
     categoryConstraints: safe(brief.categoryConstraints),
   };
 }
 
-async function exportResultsCsv(briefId, userId) {
+async function exportResultsCsv(briefId) {
   const brief = await prisma.campaignBrief.findUnique({ where: { id: briefId } });
   if (!brief) throw new Error('BRIEF_NOT_FOUND');
-  if (brief.brandUserId !== userId) throw new Error('FORBIDDEN');
 
   const matchRun = await prisma.matchRun.findFirst({
     where: { briefId },
@@ -189,7 +176,6 @@ async function exportResultsCsv(briefId, userId) {
 
   const lines = [];
 
-  // Athletes
   const athleteResults = matchRun.results.filter(r => r.assetType === 'athlete');
   if (athleteResults.length > 0) {
     lines.push('Type,Name,Sport,City,State,Tier,Score,Followers');
@@ -209,7 +195,6 @@ async function exportResultsCsv(briefId, userId) {
     }
   }
 
-  // Leagues
   const leagueResults = matchRun.results.filter(r => r.assetType === 'league');
   if (leagueResults.length > 0) {
     if (lines.length > 0) lines.push('');
@@ -230,7 +215,6 @@ async function exportResultsCsv(briefId, userId) {
     }
   }
 
-  // Venues
   const venueResults = matchRun.results.filter(r => r.assetType === 'venue');
   if (venueResults.length > 0) {
     if (lines.length > 0) lines.push('');
@@ -262,4 +246,4 @@ function csvEscape(val) {
   return str;
 }
 
-module.exports = { createBrief, getBriefForUser, getLatestResults, updateBriefStatus, exportResultsCsv };
+module.exports = { createBrief, getBriefById, getLatestResults, updateBriefStatus, exportResultsCsv };

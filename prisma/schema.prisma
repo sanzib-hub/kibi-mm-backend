@@ -44,8 +44,8 @@ model BrandUser {
 
 model CampaignBrief {
   id             Int      @id @default(autoincrement())
-  brandAccountId Int      @map("brand_account_id")
-  brandUserId    Int      @map("brand_user_id")
+  brandAccountId Int?     @map("brand_account_id")
+  brandUserId    Int?     @map("brand_user_id")
 
   campaignName      String  @map("campaign_name")
   industryCategory  String? @map("industry_category")
@@ -77,8 +77,8 @@ model CampaignBrief {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  brandAccount    BrandAccount  @relation(fields: [brandAccountId], references: [id])
-  brandUser       BrandUser     @relation(fields: [brandUserId], references: [id])
+  brandAccount    BrandAccount?  @relation(fields: [brandAccountId], references: [id])
+  brandUser       BrandUser?     @relation(fields: [brandUserId], references: [id])
   lead            Lead?
   matchRuns       MatchRun[]
   deliverableItems Deliverable[]

@@ -6,8 +6,8 @@ async function runRecommendations(req, res, next) {
     if (!briefId || isNaN(briefId)) {
       return res.status(400).json({ success: false, error: 'Valid brief_id required' });
     }
-    const limits = req.body.limits; // optional: { athletes, leagues, venues }
-    const results = await matchmakingService.runMatchmaking(briefId, req.user.id, { limits });
+    const limits = req.body.limits;
+    const results = await matchmakingService.runMatchmaking(briefId, { limits });
     res.json({ success: true, data: results });
   } catch (err) {
     next(err);

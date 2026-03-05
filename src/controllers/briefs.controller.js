@@ -12,7 +12,7 @@ async function getCanonicalOptions(req, res, next) {
 
 async function createBrief(req, res, next) {
   try {
-    const result = await briefsService.createBrief(req.body, req.user);
+    const result = await briefsService.createBrief(req.body);
     res.status(201).json({ success: true, data: result });
   } catch (err) {
     next(err);
@@ -21,7 +21,7 @@ async function createBrief(req, res, next) {
 
 async function getBrief(req, res, next) {
   try {
-    const brief = await briefsService.getBriefForUser(parseInt(req.params.brief_id), req.user.id);
+    const brief = await briefsService.getBriefById(parseInt(req.params.brief_id));
     res.json({ success: true, data: brief });
   } catch (err) {
     next(err);
@@ -30,7 +30,7 @@ async function getBrief(req, res, next) {
 
 async function getBriefResults(req, res, next) {
   try {
-    const results = await briefsService.getLatestResults(parseInt(req.params.brief_id), req.user.id);
+    const results = await briefsService.getLatestResults(parseInt(req.params.brief_id));
     res.json({ success: true, data: results });
   } catch (err) {
     next(err);
@@ -39,7 +39,7 @@ async function getBriefResults(req, res, next) {
 
 async function exportResultsCsv(req, res, next) {
   try {
-    const csv = await briefsService.exportResultsCsv(parseInt(req.params.brief_id), req.user.id);
+    const csv = await briefsService.exportResultsCsv(parseInt(req.params.brief_id));
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="results-${req.params.brief_id}.csv"`);
     res.send(csv);

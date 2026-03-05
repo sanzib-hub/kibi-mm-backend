@@ -1,15 +1,11 @@
 const prisma = require('../lib/prismaClient');
 const notificationService = require('./notification.service');
 
-async function createDemoRequest({ brief_id, contact_name, contact_email, contact_phone, preferred_time, notes }, userId) {
+async function createDemoRequest({ brief_id, contact_name, contact_email, contact_phone, preferred_time, notes }) {
   const briefId = parseInt(brief_id);
 
-  const brief = await prisma.campaignBrief.findUnique({
-    where: { id: briefId },
-    include: { brandAccount: true },
-  });
+  const brief = await prisma.campaignBrief.findUnique({ where: { id: briefId } });
   if (!brief) throw new Error('BRIEF_NOT_FOUND');
-  if (brief.brandUserId !== userId) throw new Error('FORBIDDEN');
 
   const lead = await prisma.lead.findUnique({ where: { briefId } });
   if (!lead) throw new Error('LEAD_NOT_FOUND');
@@ -26,7 +22,6 @@ async function createDemoRequest({ brief_id, contact_name, contact_email, contac
     },
   });
 
-  // Advance lead status
   await prisma.lead.update({
     where: { id: lead.id },
     data: {
@@ -35,8 +30,7 @@ async function createDemoRequest({ brief_id, contact_name, contact_email, contac
     },
   });
 
-  // Send notifications
-  notificationService.sendDemoConfirmationEmail(demoRequest, brief, brief.brandAccount);
+  notificationService.sendDemoConfirmationEmail(demoRequest, brief);
 
   return { id: demoRequest.id, leadId: lead.id, status: 'DEMO_SCHEDULED' };
 }
