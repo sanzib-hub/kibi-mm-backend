@@ -16,12 +16,11 @@ function camelToSnake(str) {
  * Loads brief, runs progressive relaxation, persists MatchRun + MatchResults,
  * and returns teaser payload.
  */
-async function runMatchmaking(briefId, userId, options = {}) {
+async function runMatchmaking(briefId, options = {}) {
   const brief = await prisma.campaignBrief.findUnique({
     where: { id: briefId },
   });
   if (!brief) throw new Error('BRIEF_NOT_FOUND');
-  if (brief.brandUserId !== userId) throw new Error('FORBIDDEN');
 
   const parsedBrief = {
     ...brief,

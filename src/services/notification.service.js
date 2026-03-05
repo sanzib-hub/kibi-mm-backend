@@ -22,16 +22,17 @@ function safeParseJson(str, fallback) {
   }
 }
 
-async function sendBriefSubmissionNotification(brief, brandUser, brandAccount) {
+async function sendBriefSubmissionNotification(brief) {
   const sports = (safeParseJson(brief.sports, []) || []).join(', ') || '—';
   const cities = (safeParseJson(brief.targetCities, []) || []).join(', ') || '—';
   const states = (safeParseJson(brief.targetStates, []) || []).join(', ') || '—';
+  const contact = brief.contactName || '—';
 
   const html = `
     <h2 style="color:#1a1a2e">New Brief Submitted — ${escapeHtml(brief.campaignName)}</h2>
     <table style="border-collapse:collapse;width:100%">
-      <tr><td style="padding:6px;font-weight:bold">Company</td><td style="padding:6px">${escapeHtml(brandAccount.company)}</td></tr>
       <tr><td style="padding:6px;font-weight:bold">Contact</td><td style="padding:6px">${escapeHtml(brief.contactName) || '—'} &lt;${escapeHtml(brief.contactEmail) || '—'}&gt;</td></tr>
+      <tr><td style="padding:6px;font-weight:bold">Phone</td><td style="padding:6px">${escapeHtml(brief.contactPhone) || '—'}</td></tr>
       <tr><td style="padding:6px;font-weight:bold">Campaign</td><td style="padding:6px">${escapeHtml(brief.campaignName)}</td></tr>
       <tr><td style="padding:6px;font-weight:bold">Objective</td><td style="padding:6px">${escapeHtml(brief.campaignObjective) || '—'}</td></tr>
       <tr><td style="padding:6px;font-weight:bold">Budget</td><td style="padding:6px">${escapeHtml(brief.budgetCurrency) || 'INR'} ${escapeHtml(brief.budget) || '—'}</td></tr>
@@ -46,20 +47,19 @@ async function sendBriefSubmissionNotification(brief, brandUser, brandAccount) {
     </p>
   `;
 
-  // Fire and forget
   mailer.sendMail({
     from: config.smtpFrom,
     to: config.notifyEmail,
-    subject: `[KIBI] New Brief: ${escapeHtml(brief.campaignName)} — ${escapeHtml(brandAccount.company)}`,
+    subject: `[KIBI] New Brief: ${escapeHtml(brief.campaignName)} — ${escapeHtml(contact)}`,
     html,
   }).catch(err => console.warn('[Mailer] Brief notification failed:', err.message));
 
   sendSlackMessage({
-    text: `*New brief submitted*: ${brief.campaignName} by ${brandAccount.company} | Sports: ${sports} | Cities: ${cities}`,
+    text: `*New brief submitted*: ${brief.campaignName} by ${contact} | Sports: ${sports} | Cities: ${cities}`,
   });
 }
 
-async function sendDemoConfirmationEmail(demoRequest, brief, brandAccount) {
+async function sendDemoConfirmationEmail(demoRequest, brief) {
   const html = `
     <h2 style="color:#1a1a2e">Demo Request Received</h2>
     <p>Hi ${escapeHtml(demoRequest.contactName)},</p>
@@ -76,16 +76,15 @@ async function sendDemoConfirmationEmail(demoRequest, brief, brandAccount) {
     html,
   }).catch(err => console.warn('[Mailer] Demo confirmation failed:', err.message));
 
-  // Also notify internal team
   mailer.sendMail({
     from: config.smtpFrom,
     to: config.notifyEmail,
-    subject: `[KIBI] Demo Requested: ${escapeHtml(brief.campaignName)} — ${escapeHtml(brandAccount.company)}`,
+    subject: `[KIBI] Demo Requested: ${escapeHtml(brief.campaignName)} — ${escapeHtml(demoRequest.contactName)}`,
     html: `<p>Demo requested by ${escapeHtml(demoRequest.contactName)} &lt;${escapeHtml(demoRequest.contactEmail)}&gt; for brief: ${escapeHtml(brief.campaignName)}</p><p>Preferred time: ${escapeHtml(demoRequest.preferredTime) || 'Not specified'}</p>`,
   }).catch(err => console.warn('[Mailer] Internal demo notification failed:', err.message));
 
   sendSlackMessage({
-    text: `*Demo requested*: ${brief.campaignName} by ${brandAccount.company} — Contact: ${demoRequest.contactName} <${demoRequest.contactEmail}>`,
+    text: `*Demo requested*: ${brief.campaignName} by ${demoRequest.contactName} <${demoRequest.contactEmail}>`,
   });
 }
 

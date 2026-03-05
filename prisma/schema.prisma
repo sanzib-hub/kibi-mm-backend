@@ -37,40 +37,45 @@ model BrandUser {
 }
 
 model CampaignBrief {
-  id                  Int           @id @default(autoincrement())
-  brandAccountId      Int           @map("brand_account_id")
-  brandUserId         Int           @map("brand_user_id")
-  campaignName        String        @map("campaign_name")
-  budget              Float?
-  budgetCurrency      String?       @default("INR") @map("budget_currency")
-  startDate           DateTime?     @map("start_date")
-  endDate             DateTime?     @map("end_date")
-  campaignObjective   String?       @map("campaign_objective")
-  sports              String
-  targetCities        String?       @map("target_cities")
-  targetStates        String?       @map("target_states")
-  targetRegions       String?       @map("target_regions")
-  assetCategories     String?       @map("asset_categories")
-  athleteTiers        String?       @map("athlete_tiers")
-  deliverables        String?
-  notes               String?
-  contactName         String?       @map("contact_name")
-  contactEmail        String?       @map("contact_email")
-  contactPhone        String?       @map("contact_phone")
-  status              String        @default("DRAFT")
-  submittedAt         DateTime?     @map("submitted_at")
-  createdAt           DateTime      @default(now()) @map("created_at")
-  updatedAt           DateTime      @updatedAt @map("updated_at")
-  industryCategory    String?       @map("industry_category")
-  budgetRange         String?       @map("budget_range")
-  applicationDeadline DateTime?     @map("application_deadline") @db.Timestamp(6)
-  targetAudience      String?       @map("target_audience")
-  categoryConstraints String?       @map("category_constraints")
-  brandAccount        BrandAccount  @relation(fields: [brandAccountId], references: [id])
-  brandUser           BrandUser     @relation(fields: [brandUserId], references: [id])
-  deliverableItems    Deliverable[]
-  lead                Lead?
-  matchRuns           MatchRun[]
+  id             Int      @id @default(autoincrement())
+  brandAccountId Int?     @map("brand_account_id")
+  brandUserId    Int?     @map("brand_user_id")
+
+  campaignName      String  @map("campaign_name")
+  industryCategory  String? @map("industry_category")
+  budget            Float?
+  budgetRange       String? @map("budget_range")
+  budgetCurrency    String? @default("INR") @map("budget_currency")
+  startDate           DateTime? @map("start_date")
+  endDate             DateTime? @map("end_date")
+  applicationDeadline DateTime? @map("application_deadline")
+  campaignObjective   String? @map("campaign_objective")
+
+  sports            String
+  targetAudience    String? @map("target_audience")
+  targetCities    String? @map("target_cities")
+  targetStates    String? @map("target_states")
+  targetRegions   String? @map("target_regions")
+  assetCategories String? @map("asset_categories")
+  athleteTiers    String? @map("athlete_tiers")
+
+  deliverables       String?
+  categoryConstraints String? @map("category_constraints")
+  notes              String?
+  contactName  String? @map("contact_name")
+  contactEmail String? @map("contact_email")
+  contactPhone String? @map("contact_phone")
+
+  status      String   @default("DRAFT")
+  submittedAt DateTime? @map("submitted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  brandAccount    BrandAccount?  @relation(fields: [brandAccountId], references: [id])
+  brandUser       BrandUser?     @relation(fields: [brandUserId], references: [id])
+  lead            Lead?
+  matchRuns       MatchRun[]
+  deliverableItems Deliverable[]
 
   @@map("campaign_brief")
 }
